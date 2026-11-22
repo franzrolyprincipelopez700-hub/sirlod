@@ -128,7 +128,7 @@ export default function AdminLayout() {
           <Breadcrumb />
           <Outlet />
         </div>
-        <ChatbotWidget key={user.id} canUseAi sessionId={"admin:" + user.id} />
+        <ChatbotWidget key={user.id} isAdministrator sessionId={"admin:" + user.id} />
       </main>
     </div>
   );

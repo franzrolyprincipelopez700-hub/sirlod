@@ -6,7 +6,16 @@ import {
 } from "three";
 
 export type CoachPose = "idle" | "thinking" | "speaking";
-export interface CoachMotion { pose: CoachPose; wave: number }
+export interface CoachSpeechBeat {
+  at: number;
+  openness: number;
+  rounded: boolean;
+}
+export interface CoachMotion {
+  pose: CoachPose;
+  wave: number;
+  speechBeat?: { readonly current: CoachSpeechBeat | null };
+}
 
 export function mountCoach(canvas: HTMLCanvasElement, motion: () => CoachMotion) {
   const renderer = new WebGLRenderer({ canvas, alpha: true, antialias: true, powerPreference: "low-power" });
@@ -83,7 +92,7 @@ export function mountCoach(canvas: HTMLCanvasElement, motion: () => CoachMotion)
 
   const head = group(body, 0, 0.56, 0.025);
   oval(head, materials.skin, [0, 0.015, 0], [0.363, 0.425, 0.325]);
-  oval(head, materials.skin, [0, -0.15, 0.09], [0.285, 0.254, 0.257]);
+  const jaw = oval(head, materials.skin, [0, -0.15, 0.09], [0.285, 0.254, 0.257]);
   for (const side of [-1, 1]) {
     oval(head, materials.skin, [side * 0.345, -0.041, -0.008], [0.078, 0.118, 0.059]);
     oval(head, materials.cheek, [side * 0.376, -0.043, 0.033], [0.037, 0.065, 0.019]);
@@ -115,6 +124,8 @@ export function mountCoach(canvas: HTMLCanvasElement, motion: () => CoachMotion)
   talking.visible = false;
   const teeth = oval(head, materials.white, [0, -0.151, 0.348], [0.063, 0.012, 0.009]);
   teeth.visible = false;
+  const tongue = oval(head, materials.cheek, [0, -0.193, 0.349], [0.041, 0.009, 0.006]);
+  tongue.visible = false;
 
   function arm(side: number) {
     const shoulder = group(body, side * 0.36, -0.04, 0);
@@ -154,10 +165,15 @@ export function mountCoach(canvas: HTMLCanvasElement, motion: () => CoachMotion)
     const wave = waving ? Math.sin(Math.PI * Math.min(1, elapsed / 1.55)) : 0;
     const speaking = state.pose === "speaking" && !still;
     const thinking = state.pose === "thinking";
-    body.position.y = still ? 0 : 0.013 * Math.sin(seconds * 2.1);
+    const beat = state.speechBeat?.current;
+    const emphasis = speaking && beat ? Math.max(0, 1 - (now - beat.at) / 350) * beat.openness : 0;
+    const articulation = speaking
+      ? Math.min(1, Math.max(0, 0.48 + 0.48 * Math.sin(seconds * 16) + 0.34 * emphasis))
+      : 0;
+    body.position.y = still ? 0 : 0.013 * Math.sin(seconds * 2.1) + 0.015 * emphasis;
     body.rotation.y = still ? -0.065 : -0.065 + pointer.x * 0.08;
     head.rotation.y = still ? 0 : pointer.x * 0.22 + 0.063 * Math.sin(seconds * 1.16);
-    head.rotation.x = still ? 0 : -pointer.y * 0.085 + (speaking ? 0.055 * Math.sin(seconds * 6.4) : 0.025);
+    head.rotation.x = still ? 0 : -pointer.y * 0.085 + (speaking ? 0.085 * emphasis : 0.025);
     head.rotation.z = still ? 0 : thinking ? -0.135 : (waving ? -0.1 * wave : 0.018);
     const blinkCycle = (seconds + 1.65) % 3.95;
     const blink = still ? 1 : 1 - 0.94 * Math.exp(-((blinkCycle - 2.92) ** 2) / 0.004);
@@ -165,17 +181,20 @@ export function mountCoach(canvas: HTMLCanvasElement, motion: () => CoachMotion)
       eye.scale.y = blink;
       pupil.position.x = still ? 0 : pointer.x * 0.022;
       pupil.position.y = still ? 0 : pointer.y * 0.014;
-      brow.position.y = thinking && !still ? 0.146 : 0.128;
+      brow.position.y = (thinking && !still ? 0.146 : 0.128) + 0.012 * emphasis;
     }
     talking.visible = speaking;
-    teeth.visible = speaking;
+    teeth.visible = speaking && articulation > 0.22;
+    tongue.visible = speaking && articulation > 0.52;
     smile.visible = !speaking;
-    talking.scale.y = (0.025 + 0.027 * Math.abs(Math.sin(seconds * 13))) * (speaking ? 1 : 0.5);
-    left.shoulder.rotation.z = -0.23;
-    left.elbow.rotation.z = -0.12;
-    left.elbow.rotation.x = -0.44;
-    right.shoulder.rotation.z = still ? 0.21 : 0.22 + 1.56 * wave + (speaking ? 0.19 * (1 + Math.sin(seconds * 5)) : 0);
-    right.elbow.rotation.z = still ? 0.16 : 0.2 + wave * (0.68 + 0.56 * Math.sin(elapsed * 19));
+    jaw.position.y = -0.15 - 0.026 * articulation;
+    talking.scale.x = beat?.rounded && emphasis > 0.16 ? 0.058 : 0.089 - 0.015 * articulation;
+    talking.scale.y = 0.012 + 0.049 * articulation;
+    left.shoulder.rotation.z = -0.23 - 0.14 * emphasis;
+    left.elbow.rotation.z = -0.12 - 0.24 * emphasis;
+    left.elbow.rotation.x = -0.44 - 0.18 * emphasis;
+    right.shoulder.rotation.z = still ? 0.21 : 0.22 + 1.56 * wave + 0.26 * emphasis;
+    right.elbow.rotation.z = still ? 0.16 : 0.2 + wave * (0.68 + 0.56 * Math.sin(elapsed * 19)) + 0.2 * emphasis;
     right.elbow.rotation.x = -0.23 - (thinking && !still ? 0.44 : 0);
     renderer.render(scene, camera);
   }

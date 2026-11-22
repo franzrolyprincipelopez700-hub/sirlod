@@ -147,9 +147,11 @@ GEMINI_MODEL=gemini-3.8-flash
 S3_REPORT_KEY_PREFIX=reportes
 ```
 
-El chat habitual de LosaBot usa la guía local y lee el horario desde la configuración de SIRLOD.
-El administrador puede activar **Usar IA** para una consulta, con el proveedor de `AI_PROVIDER`.
-El entrenador 3D se renderiza en el navegador, incluida su animación. La revisión de PDFs usa el proveedor configurado
+LosaBot responde las preguntas frecuentes con reglas locales y los datos de SIRLOD. Si necesita
+elaborar la respuesta, el chat autenticado usa automáticamente el proveedor de `AI_PROVIDER` con
+horarios y disponibilidad consultados en PostgreSQL. Los estados personales se consultan por separado.
+El entrenador usa Three.js en el navegador y habla con una voz local en español del dispositivo, si está disponible.
+La revisión de PDFs usa el proveedor configurado
 en `DOCUMENT_AI_PROVIDER` (`openai` o `gemini`). Con Gemini usa `GEMINI_API_KEY` y `GEMINI_MODEL`.
 
 En práctica, `REPORT_DEEPSEEK_API_KEY` habilita DeepSeek exclusivamente para los reportes.

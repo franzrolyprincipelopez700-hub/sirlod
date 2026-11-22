@@ -40,7 +40,7 @@ def test_openapi_contains_existing_route_prefixes() -> None:
     assert "/api/reportes/regenerar" in paths
     assert "delete" in paths["/api/reportes"]
     assert "/api/chatbot/" in paths
-    assert "post" in paths["/api/chatbot/consulta-ia"]
+    assert "post" in paths["/api/chatbot/conversacion"]
     original_paths = {
         path: operations for path, operations in paths.items()
         if not path.startswith(("/api/aprendizaje/", "/api/administracion/"))
