@@ -172,7 +172,7 @@ export default function ReportsPage() {
     const confirmation = await Swal.fire({
       icon: "question",
       title: "¿Regenerar este reporte?",
-      text: "Se consultarán nuevamente los datos y DeepSeek creará una versión actualizada.",
+      text: "Se actualizarán las cifras y se solicitará un análisis a DeepSeek. Si la API falla, se guardará un análisis local.",
       showCancelButton: true,
       confirmButtonText: "Sí, regenerar",
       cancelButtonText: "Cancelar",
@@ -189,12 +189,14 @@ export default function ReportsPage() {
         credentials: "same-origin",
       });
       if (!response.ok) throw new Error("No se pudo regenerar el reporte.");
+      const regenerated = (await response.json()) as { data?: { fuente_ia?: string } };
+      const usedDeepSeek = regenerated.data?.fuente_ia === "deepseek";
       setRequestedKey(reportKey);
       setLoadVersion((value) => value + 1);
       await Swal.fire({
-        icon: "success",
+        icon: usedDeepSeek ? "success" : "info",
         title: "Reporte actualizado",
-        text: "La nueva versión se guardó correctamente en S3.",
+        text: usedDeepSeek ? "Análisis de DeepSeek guardado." : "Se guardó un análisis hecho con el motor local.",
         timer: 1800,
         showConfirmButton: false,
       });

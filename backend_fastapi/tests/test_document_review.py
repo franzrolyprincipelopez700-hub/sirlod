@@ -126,3 +126,95 @@ async def test_analyze_document_uses_openai(monkeypatch) -> None:
     assert captured["url"] == "https://api.openai.com/v1/chat/completions"
     assert captured["json"]["model"] == "gpt-4o-mini"
     assert captured["headers"] == {"Authorization": "Bearer sk-openai-doc-key"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("outcome", "expected", "notices"),
+    [
+        ("unavailable", "Pendiente", 0),
+        ("uncertain", "Pendiente", 0),
+        ("signed", "Aceptado", 1),
+        ("unsigned", "Rechazado", 1),
+    ],
+)
+async def test_automatic_review_keeps_uncertain_requests_pending(
+    monkeypatch: pytest.MonkeyPatch, outcome: str, expected: str, notices: int
+) -> None:
+    from datetime import time, timedelta
+    from unittest.mock import AsyncMock
+
+    from sqlalchemy import func, select
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from app.core.clock import campus_now
+    from app.models import (
+        Archivo,
+        Base,
+        DetallePermiso,
+        Disciplina,
+        Losa,
+        Notificacion,
+        Permiso,
+        Trabajador,
+        User,
+    )
+    from app.modules.permisos import service
+
+    pdf = b"%PDF-1.4 fixture"
+    student = {"codigo": "QA92713", "rol": "Alumno", "nombre_completo": "Equipo QA"}
+    date = campus_now().date() + timedelta(days=1)
+    reviewer = AsyncMock()
+    if outcome == "unavailable":
+        reviewer.side_effect = RuntimeError("Provider offline")
+    else:
+        reviewer.return_value = assessment(
+            confidence=0.6 if outcome == "uncertain" else 0.98,
+            has_visible_signature=outcome != "unsigned",
+        )
+    monkeypatch.setattr(service, "analyze_document", reviewer)
+    monkeypatch.setattr(service, "get_usuario", AsyncMock(return_value=student))
+    monkeypatch.setattr(service, "download_file", AsyncMock(return_value=pdf))
+    monkeypatch.setattr(service, "object_key", lambda name: name)
+    monkeypatch.setattr(settings, "document_ai_min_confidence", 0.85)
+
+    engine = create_async_engine("sqlite+aiosqlite://")
+    try:
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+        async with async_sessionmaker(engine, expire_on_commit=False)() as db:
+            db.add_all([
+                Trabajador(
+                    id_t=1, dni="99999123", nombres="QA", apellido_p="Prueba", apellido_m="Control",
+                    rol="Administrador", email="qa@example.com", password="unused",
+                ),
+                User(id_u=1, codigo=student["codigo"], password="unused", rol="Alumno"),
+                Disciplina(id_d=1, nombre="Deporte de prueba"),
+                Losa(id_l=1, numero_l="99", nombre="Losa QA", ubicacion="QA", id_d=1),
+                Archivo(
+                    id_arch=1, nombre_original="sustento-qa.pdf", nombre_unico="documentos/sustento-qa.pdf",
+                    mimetype="application/pdf", url="documentos/sustento-qa.pdf",
+                ),
+                Permiso(id_p=1, tipo="Especial", id_u=1, id_arch=1, duracion_t=1),
+                Permiso(id_p=2, tipo="Especial", id_u=1, duracion_t=1),
+                DetallePermiso(
+                    id_d=1, id_p=1, id_l=1, fecha=date, hora_inicio=time(10), hora_fin=time(11), duracion=1,
+                ),
+            ])
+            await db.commit()
+
+            result = await service.automatic_review(db, 1, permission_id=1)
+
+            reviewer.assert_awaited_once()
+            first = await db.get(Permiso, 1)
+            second = await db.get(Permiso, 2)
+            assert first is not None and first.estado == expected
+            assert second is not None and second.estado == "Pendiente"
+            assert (first.id_t_decision, first.fecha_decision is not None) == (
+                (None, False) if expected == "Pendiente" else (1, True)
+            )
+            assert result["resultados"][0]["decision"] == expected
+            assert result["pendientes"] == int(expected == "Pendiente")
+            assert await db.scalar(select(func.count()).select_from(Notificacion)) == notices
+    finally:
+        await engine.dispose()

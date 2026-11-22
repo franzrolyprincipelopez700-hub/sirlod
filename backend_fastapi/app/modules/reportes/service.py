@@ -25,6 +25,7 @@ class ReportDocument:
     content: bytes
     filename: str
     cache_hit: bool
+    source: str
 
 
 def _stored_month(periodo: Literal["mensual", "anual"], mes: int) -> int:
@@ -54,6 +55,7 @@ async def _cached_document(report: ReporteGenerado) -> ReportDocument:
         content=await download_file(report.s3_key),
         filename=report.nombre_archivo,
         cache_hit=True,
+        source=report.fuente_ia,
     )
 
 
@@ -162,17 +164,16 @@ async def summary(
         for name, location, disc, count, court_hours in courts_rows
     ]
 
-    roles = {
-        str(rol): int(count)
-        for rol, count in (
-            await db.execute(
-                select(User.rol, func.count(Permiso.id_p))
-                .join(Permiso, Permiso.id_u == User.id_u)
-                .where(*period_filter, Permiso.estado == "Aceptado")
-                .group_by(User.rol)
-            )
-        ).all()
-    }
+    role_rows = (
+        await db.execute(
+            select(User.rol, func.count(Permiso.id_p), func.count(func.distinct(User.id_u)))
+            .join(Permiso, Permiso.id_u == User.id_u)
+            .where(*period_filter, Permiso.estado == "Aceptado")
+            .group_by(User.rol)
+        )
+    ).all()
+    roles = {str(role): int(reservations) for role, reservations, _ in role_rows}
+    active_users = {str(role): int(users) for role, _, users in role_rows}
 
     disciplines = {
         str(disc_nombre): int(count)
@@ -220,6 +221,7 @@ async def summary(
         "por_tipo": types,
         "por_losa": courts,
         "por_rol": roles,
+        "usuarios_activos_por_rol": active_users,
         "por_disciplina": disciplines,
         "franja_horaria_pico": peak_time_str,
     }
@@ -279,7 +281,7 @@ async def get_or_create_pdf(
         await delete_file(stored.key)
         raise
 
-    return ReportDocument(content=content, filename=filename, cache_hit=False)
+    return ReportDocument(content=content, filename=filename, cache_hit=False, source=source)
 
 
 async def _generate_and_upload_pdf(
@@ -350,7 +352,7 @@ async def regenerate_pdf(
         except Exception:
             logger.exception("No se pudo eliminar el PDF anterior de S3: %s", old_key)
 
-    return ReportDocument(content=content, filename=filename, cache_hit=False)
+    return ReportDocument(content=content, filename=filename, cache_hit=False, source=source)
 
 
 async def delete_report(

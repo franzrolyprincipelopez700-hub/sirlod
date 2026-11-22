@@ -1,6 +1,8 @@
+from asyncio import timeout
 from contextlib import suppress
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
+from time import monotonic
 from typing import Any
 
 from sqlalchemy import and_, func, or_, select
@@ -36,6 +38,10 @@ from app.modules.learning.discipline import check_reservation_access
 from app.modules.learning.models import Attempt, Attendance
 from app.modules.permisos.document_review import analyze_document, rejection_reasons
 from app.modules.permisos.schemas import DetallePermisoIn, PermisoIn, PermisoTrabajadorIn
+
+
+class DocumentReviewDeferred(Exception):
+    """La verificación requiere reintento o revisión humana."""
 
 
 def _utc_naive() -> datetime:
@@ -329,6 +335,7 @@ async def _document_policy_reasons(
     db: AsyncSession,
     permission: Permiso,
     details: list[DetallePermisoIn],
+    deadline: float,
 ) -> tuple[list[str], str | None]:
     """Valida padrón UNHEVAL y contenido del sustento de un permiso especial."""
     if permission.id_u is None:
@@ -365,36 +372,43 @@ async def _document_policy_reasons(
         for item in details
     )
     try:
-        content = await download_file(key)
-        if not content.startswith(b"%PDF-"):
-            return ["El contenido almacenado no corresponde a un PDF válido"], None
-        assessment = await analyze_document(
-            content,
-            student=student,
-            requested_schedule=requested_schedule,
+        async with timeout(max(0, deadline - monotonic())):
+            content = await download_file(key)
+            if not content.startswith(b"%PDF-"):
+                return ["El contenido almacenado no corresponde a un PDF válido"], None
+            assessment = await analyze_document(
+                content,
+                student=student,
+                requested_schedule=requested_schedule,
+            )
+    except (AppError, RuntimeError) as exc:
+        raise DocumentReviewDeferred(
+            "La lectura del PDF no está disponible. Reintenta o revisa el sustento manualmente."
+        ) from exc
+    if assessment.confidence < settings.document_ai_min_confidence:
+        raise DocumentReviewDeferred(
+            "La IA no pudo leer el sustento con suficiente confianza. Requiere revisión manual."
         )
-    except (AppError, RuntimeError):
-        return ["No se pudo verificar el contenido del documento con la IA"], None
     return rejection_reasons(assessment), assessment.summary
 
 
-async def automatic_review(db: AsyncSession, worker_id: int) -> dict[str, Any]:
+async def automatic_review(
+    db: AsyncSession, worker_id: int, permission_id: int | None = None
+) -> dict[str, Any]:
     """Evalúa permisos especiales pendientes con reglas deterministas y auditables."""
     decision_worker = await db.get(Trabajador, worker_id)
     if decision_worker is None or decision_worker.estado != "Activo":
         raise AppError("Administrador revisor no encontrado o inactivo", 403)
-    permissions = list(
-        (
-            await db.scalars(
-                select(Permiso)
-                .where(Permiso.tipo == "Especial", Permiso.estado == "Pendiente")
-                .order_by(Permiso.fecha_creacion, Permiso.id_p)
-                .with_for_update()
-            )
-        ).all()
-    )
+    query = select(Permiso).where(Permiso.tipo == "Especial", Permiso.estado == "Pendiente")
+    if permission_id is not None:
+        query = query.where(Permiso.id_p == permission_id)
+    query = query.order_by(Permiso.fecha_creacion, Permiso.id_p).with_for_update()
+    permissions = (await db.scalars(query)).all()
     results: list[dict[str, Any]] = []
+    deadline = monotonic() + 42
     for permission in permissions:
+        if monotonic() >= deadline:
+            break
         reasons: list[str] = []
         document_summary: str | None = None
         stored_details = list(
@@ -413,6 +427,9 @@ async def automatic_review(db: AsyncSession, worker_id: int) -> dict[str, Any]:
         if not details:
             reasons.append("No contiene bloques horarios")
         if details:
+            now = campus_now()
+            if any(item.fecha == now.date() and item.hora_inicio < now.time() for item in details):
+                reasons.append("Uno o más bloques horarios ya comenzaron")
             try:
                 await _validate_details(db, details, enforce_request_window=False)
             except AppError as exc:
@@ -431,12 +448,21 @@ async def automatic_review(db: AsyncSession, worker_id: int) -> dict[str, Any]:
                     accepted_conflicts.append(conflict)
             if accepted_conflicts:
                 reasons.append("Uno o más bloques tienen conflicto con una reserva aceptada")
-            document_reasons, document_summary = await _document_policy_reasons(
-                db,
-                permission,
-                details,
-            )
-            reasons.extend(document_reasons)
+            if not reasons:
+                try:
+                    document_reasons, document_summary = await _document_policy_reasons(
+                        db, permission, details, deadline
+                    )
+                except TimeoutError:
+                    results.append({
+                        "id_p": permission.id_p, "decision": "Pendiente",
+                        "motivo": "Se agotó el tiempo del lector de documentos. Reintenta la revisión.",
+                    })
+                    break
+                except DocumentReviewDeferred as exc:
+                    results.append({"id_p": permission.id_p, "decision": "Pendiente", "motivo": str(exc)})
+                    continue
+                reasons.extend(document_reasons)
         new_status = "Rechazado" if reasons else "Aceptado"
         reason = (
             "; ".join(dict.fromkeys(reasons))
@@ -457,8 +483,10 @@ async def automatic_review(db: AsyncSession, worker_id: int) -> dict[str, Any]:
         await db.flush()
         results.append({"id_p": permission.id_p, "decision": new_status, "motivo": reason})
     await db.commit()
+    decided = sum(item["decision"] != "Pendiente" for item in results)
     return {
         "procesados": len(results),
+        "pendientes": len(permissions) - decided,
         "aceptados": sum(item["decision"] == "Aceptado" for item in results),
         "rechazados": sum(item["decision"] == "Rechazado" for item in results),
         "resultados": results,

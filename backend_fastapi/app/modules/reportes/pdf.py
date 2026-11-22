@@ -391,9 +391,9 @@ def build_report_pdf(report: dict[str, Any]) -> bytes:
     total_p = int(report.get("total_permisos", 0))
     total_h = int(report.get("horas_reservadas", 0))
     tasa_aprob = float(report.get("tasa_aprobacion", 0.0))
-    roles = report.get("por_rol", {})
-    alumnos_c = roles.get("Alumno", 0)
-    docentes_c = roles.get("Docente", 0)
+    active_users = report.get("usuarios_activos_por_rol", {})
+    active_user_count = sum(active_users.values())
+    active_user_unit = "persona" if active_user_count == 1 else "personas"
     courts_list = report.get("por_losa", [])
     top_losa_name = courts_list[0]["losa"] if courts_list else "Sin uso"
     top_losa_pct = (
@@ -495,7 +495,7 @@ def build_report_pdf(report: dict[str, Any]) -> bytes:
                 ),
             ),
             Paragraph(
-                f"<b>{alumnos_c} Alum / {docentes_c} Doc</b>",
+                f"<b>{active_user_count} {active_user_unit}</b>",
                 ParagraphStyle(
                     "KV",
                     fontName="Helvetica-Bold",
@@ -552,7 +552,7 @@ def build_report_pdf(report: dict[str, Any]) -> bytes:
                 ),
             ),
             Paragraph(
-                "Participación activa",
+                "Usuarios con reservas aprobadas",
                 ParagraphStyle(
                     "KD",
                     fontName="Helvetica",
@@ -890,12 +890,7 @@ def build_report_pdf(report: dict[str, Any]) -> bytes:
     # 2. Evaluación del Comportamiento de la Demanda y Horarios Pico
     eval_text = _safe(
         analysis.get("evaluacion_demanda")
-        or (
-            f"La demanda deportiva refleja participación activa de alumnos ({alumnos_c}) y docentes "
-            f"({docentes_c}), "
-            "con preferencia por disciplinas de trabajo en equipo y concentración de reservas en horario "
-            "vespertino."
-        )
+        or "Consulta el desglose de reservas por comunidad, disciplinas y franjas horarias."
     )
     box_eval = Table(
         [

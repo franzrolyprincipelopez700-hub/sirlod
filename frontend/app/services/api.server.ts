@@ -219,16 +219,18 @@ export const api = {
   get: (path: string, request: Request) =>
     apiFetch(path, request, { method: "GET" }),
 
-  getBinary: (path: string, request: Request) =>
+  getBinary: (path: string, request: Request, timeout?: number) =>
     apiFetch(path, request, {
       method: "GET",
       responseType: "arraybuffer",
+      ...(timeout === undefined ? {} : { timeout }),
     }) as Promise<ArrayBuffer>,
 
-  post: (path: string, request: Request, body?: unknown) =>
+  post: (path: string, request: Request, body?: unknown, timeout?: number) =>
     apiFetch(path, request, {
       method: "POST",
       data: body ? JSON.stringify(body) : undefined,
+      ...(timeout === undefined ? {} : { timeout }),
     }),
 
   postForm: (path: string, request: Request, body: FormData) =>

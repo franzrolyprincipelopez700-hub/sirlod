@@ -24,7 +24,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       ? `SIRLOD_Reporte_Ejecutivo_${monthName}_${anioParam}.pdf`
       : `SIRLOD_Reporte_Ejecutivo_Anual_${anioParam}.pdf`;
 
-  const pdf = await api.getBinary(`/reportes/pdf?${query.toString()}`, request);
+  const pdf = await api.getBinary(`/reportes/pdf?${query.toString()}`, request, 60_000);
   const headers = responseHeadersWithCookies(request);
   headers.set("Content-Type", "application/pdf");
   headers.set("Content-Disposition", `inline; filename="${dignifiedFilename}"`);
@@ -46,7 +46,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const path = `/reportes?${query.toString()}`;
   const result = request.method === "DELETE"
     ? await api.delete(path, request)
-    : await api.post(`/reportes/regenerar?${query.toString()}`, request);
+    : await api.post(`/reportes/regenerar?${query.toString()}`, request, undefined, 60_000);
   const headers = responseHeadersWithCookies(request);
   headers.set("Content-Type", "application/json");
 

@@ -122,11 +122,13 @@ async def list_all(db: DBSession, _admin: Admin, estado: str | None = Query(defa
 
 
 @router.post("/revision-automatica")
-async def automatic_review(db: DBSession, admin: Admin) -> dict[str, Any]:
+async def automatic_review(
+    db: DBSession, admin: Admin, id_permiso: int | None = Query(default=None, ge=1)
+) -> dict[str, Any]:
     return {
         "success": True,
         "message": "Revisión automática completada",
-        "data": await service.automatic_review(db, admin.id),
+        "data": await service.automatic_review(db, admin.id, id_permiso),
     }
 
 

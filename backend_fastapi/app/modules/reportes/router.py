@@ -71,7 +71,7 @@ async def regenerate_report(
     return {
         "success": True,
         "message": "Reporte regenerado correctamente",
-        "data": {"nombre_archivo": document.filename},
+        "data": {"nombre_archivo": document.filename, "fuente_ia": document.source},
     }
 
 

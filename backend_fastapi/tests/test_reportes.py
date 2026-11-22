@@ -40,6 +40,8 @@ def test_report_pdf_is_valid_and_contains_summary() -> None:
         "tasa_aprobacion": 75.0,
         "por_estado": {"Aceptado": 9, "Pendiente": 3},
         "por_tipo": {"Normal": 8, "Especial": 4},
+        "por_rol": {"Alumno": 9},
+        "usuarios_activos_por_rol": {"Alumno": 2, "Docente": 1},
         "por_losa": [{"losa": "Losa Principal", "reservas": 9, "horas": 18}],
         "analisis_fuente": "deepseek",
         "analisis": {
@@ -59,6 +61,7 @@ def test_report_pdf_is_valid_and_contains_summary() -> None:
     assert "SIRLOD" in extracted
     assert "Losa Principal" in extracted
     assert "DeepSeek" in extracted
+    assert "3 personas" in extracted
     assert report_filename(report) == "SIRLOD_Reporte_Ejecutivo_Septiembre_2026.pdf"
 
 
@@ -172,6 +175,7 @@ async def test_generated_report_is_loaded_from_s3_cache(monkeypatch) -> None:
     cached = SimpleNamespace(
         s3_key="reportes/existente.pdf",
         nombre_archivo="reporte_mensual_2026_07.pdf",
+        fuente_ia="local",
     )
     find_report = AsyncMock(return_value=cached)
     download = AsyncMock(return_value=b"%PDF-cache")

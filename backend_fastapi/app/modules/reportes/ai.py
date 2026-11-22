@@ -141,6 +141,7 @@ async def generate_report_analysis(report: dict[str, Any]) -> tuple[ReportAnalys
         "por_tipo": report["por_tipo"],
         "por_losa": report["por_losa"],
         "por_rol": report.get("por_rol", {}),
+        "usuarios_activos_por_rol": report.get("usuarios_activos_por_rol", {}),
         "por_disciplina": report.get("por_disciplina", {}),
         "franja_horaria_pico": report.get("franja_horaria_pico", "Sin actividad registrada"),
     }

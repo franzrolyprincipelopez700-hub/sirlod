@@ -1,6 +1,6 @@
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints
 
 
 class HistoryPart(BaseModel):
@@ -13,5 +13,5 @@ class HistoryEntry(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    message: str = Field(min_length=1, max_length=500)
+    message: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)]
     history: list[HistoryEntry] = Field(default_factory=list, max_length=10)

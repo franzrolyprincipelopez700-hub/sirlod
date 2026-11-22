@@ -157,7 +157,7 @@ export default function UserLayout() {
       </main>
 
       {/* Widget flotante de Chatbot */}
-      <ChatbotWidget />
+      <ChatbotWidget key={user.id} sessionId={"user:" + user.id} />
     </div>
   );
 }

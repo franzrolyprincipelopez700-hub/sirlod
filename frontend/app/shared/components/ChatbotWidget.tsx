@@ -1,561 +1,320 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Link } from "react-router";
 import {
-  FaTimes,
-  FaPaperPlane,
-  FaRobot,
-  FaQuestionCircle,
-  FaRegTrashAlt,
+  FaArrowRight, FaBolt, FaCalendarAlt, FaHandPaper, FaPaperPlane, FaRegFilePdf,
+  FaRegTrashAlt, FaRunning, FaTimes, FaVolleyballBall,
 } from "react-icons/fa";
 import { API_BASE_URL } from "~/lib/constants";
+import type { CoachMotion, CoachPose } from "./coach-scene";
+import "./losabot.css";
 
-/* ── Tipos ──────────────────────────────────────────────────────── */
+type Topic = "general" | "horarios" | "reservas" | "documentos" | "permisos" | "losas" | "pausa" | "saludo";
 interface Message {
   id: string;
-  sender: "bot" | "user" | "system";
+  sender: "bot" | "user" | "error";
   text: string;
-  time: string;
+  topic?: Topic;
+  source?: string;
 }
-
-interface GeminiHistoryEntry {
+interface HistoryEntry {
   role: "user" | "model";
   parts: { text: string }[];
 }
 
-/* ── Constantes ─────────────────────────────────────────────────── */
-const BOT_AVATAR = "/images/1.jpg";
-const API_URL = `${API_BASE_URL}/chatbot/`;
-const MAX_MESSAGES_PER_SESSION = 40;
-const SESSION_KEY = "losabot_session";
-
-const PREGUNTAS_SUGERIDAS = [
-  "¿Qué necesito para reservar?",
-  "¿Cuáles son los horarios?",
-  "¿Cómo veo mis permisos?",
-  "¿Qué deportes puedo jugar?",
-];
-
-const WELCOME_MESSAGE: Message = {
-  id: "welcome",
-  sender: "bot",
-  text: "¡Hola! 👋 Soy **LosaBot**, tu asistente virtual para las losas deportivas de la UNHEVAL. ¿En qué puedo ayudarte?",
-  time: new Date().toLocaleTimeString("es-PE", {
-    hour: "2-digit",
-    minute: "2-digit",
-  }),
+const portrait = "/images/losabot-entrenador.webp";
+const welcome: Message = {
+  id: "welcome", sender: "bot",
+  text: "¡Hola! Soy LosaBot. Te ayudo a encontrar un horario, elegir una losa o preparar tu permiso.",
 };
 
-/* ── Helpers ────────────────────────────────────────────────────── */
-function now() {
-  return new Date().toLocaleTimeString("es-PE", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
+const shortcuts = [
+  { label: "Ver horarios", text: "¿Cuáles son los horarios de las losas?", icon: FaCalendarAlt },
+  { label: "Cómo reservar", text: "¿Cómo hago una reserva?", icon: FaVolleyballBall },
+  { label: "Permiso especial", text: "¿Qué PDF requiere el permiso especial?", icon: FaRegFilePdf },
+  { label: "Pausa activa", text: "¿Me guías en una pausa activa?", icon: FaRunning },
+];
 
-function uid() {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
+const userLinks: Partial<Record<Topic, [label: string, href: string]>> = {
+  horarios: ["Consultar horarios", "/horario"],
+  reservas: ["Buscar un horario", "/horario"],
+  permisos: ["Mis permisos", "/permiso"],
+  losas: ["Explorar losas", "/losas"],
+};
+const adminLinks: typeof userLinks = {
+  horarios: ["Ver horarios configurados", "/dashboard/configuracion"],
+  reservas: ["Ver reservas", "/dashboard/detalle-permisos"],
+  documentos: ["Abrir revisión automática", "/dashboard/revision-ia"],
+  permisos: ["Ver solicitudes", "/dashboard/permisos"],
+  losas: ["Ver losas deportivas", "/dashboard/losas"],
+};
 
-/** Render básico de negritas en texto plano con ** */
-function renderBold(text: string) {
-  const parts = text.split(/(\*\*[^*]+\*\*)/g);
-  return parts.map((part, i) => {
-    if (part.startsWith("**") && part.endsWith("**")) {
-      return (
-        <strong key={i} className="font-semibold">
-          {part.slice(2, -2)}
-        </strong>
-      );
-    }
-    return <span key={i}>{part}</span>;
-  });
-}
+function CoachAvatar({ pose, wave }: CoachMotion) {
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const motion = useRef<CoachMotion>({ pose, wave });
 
-/* ── Componente principal ───────────────────────────────────────── */
-export function ChatbotWidget() {
-  const [isOpen, setIsOpen] = useState(false);
-  const [inputMessage, setInputMessage] = useState("");
-  const [messages, setMessages] = useState<Message[]>([WELCOME_MESSAGE]);
-  const [history, setHistory] = useState<GeminiHistoryEntry[]>([]);
-  const [isTyping, setIsTyping] = useState(false);
-  const [messageCount, setMessageCount] = useState(0);
-  const [hasUnread, setHasUnread] = useState(false);
+  useEffect(() => { motion.current = { pose, wave }; }, [pose, wave]);
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const abortRef = useRef<AbortController | null>(null);
-
-  // Scroll automático al final
   useEffect(() => {
-    if (isOpen) {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }
-  }, [messages, isTyping, isOpen]);
-
-  // Focus en el input al abrir
-  useEffect(() => {
-    if (isOpen) {
-      setTimeout(() => inputRef.current?.focus(), 300);
-    }
-  }, [isOpen]);
-
-  // Restaurar sesión
-  useEffect(() => {
-    try {
-      const saved = sessionStorage.getItem(SESSION_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed.messages?.length > 0) {
-          setMessages(parsed.messages);
-          setHistory(parsed.history || []);
-          setMessageCount(parsed.messageCount || 0);
-        }
-      }
-    } catch {
-      // Sesión corrupta, empezar limpio
-    }
+    let mounted = true;
+    let dispose: (() => void) | undefined;
+    void import("./coach-scene").then(({ mountCoach }) => {
+      if (!mounted || !canvas.current) return;
+      const surface = canvas.current;
+      dispose = mountCoach(surface, () => motion.current);
+      surface.dataset.ready = "true";
+    }).catch(() => {
+      if (mounted && canvas.current) canvas.current.dataset.ready = "false";
+    });
+    return () => {
+      mounted = false;
+      dispose?.();
+    };
   }, []);
 
-  // Guardar sesión
-  useEffect(() => {
-    try {
-      sessionStorage.setItem(
-        SESSION_KEY,
-        JSON.stringify({ messages, history, messageCount })
-      );
-    } catch {
-      // sessionStorage lleno, ignorar
-    }
-  }, [messages, history, messageCount]);
-
-  const handleOpen = useCallback(() => {
-    setIsOpen(true);
-    setHasUnread(false);
-  }, []);
-
-  const handleClose = useCallback(() => {
-    setIsOpen(false);
-    // Cancelar petición pendiente al cerrar
-    abortRef.current?.abort();
-  }, []);
-
-  const handleClearChat = useCallback(() => {
-    setMessages([WELCOME_MESSAGE]);
-    setHistory([]);
-    setMessageCount(0);
-    sessionStorage.removeItem(SESSION_KEY);
-  }, []);
-
-  /* ── Enviar mensaje ───────────────────────────────────────────── */
-  const handleSendMessage = useCallback(
-    async (textToSend?: string) => {
-      const text = (textToSend || inputMessage).trim();
-      if (!text || isTyping) return;
-
-      // Verificar límite de mensajes
-      if (messageCount >= MAX_MESSAGES_PER_SESSION) {
-        const limitMsg: Message = {
-          id: uid(),
-          sender: "system",
-          text: "Has alcanzado el límite de consultas de esta sesión. Recarga la página para continuar.",
-          time: now(),
-        };
-        setMessages((prev) => [...prev, limitMsg]);
-        return;
-      }
-
-      // Agregar mensaje del usuario
-      const userMsg: Message = {
-        id: uid(),
-        sender: "user",
-        text,
-        time: now(),
-      };
-
-      setMessages((prev) => [...prev, userMsg]);
-      if (!textToSend) setInputMessage("");
-      setIsTyping(true);
-      setMessageCount((c) => c + 1);
-
-      // Preparar petición con historial
-      const abortController = new AbortController();
-      abortRef.current = abortController;
-
-      try {
-        const response = await fetch(API_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({ message: text, history }),
-          signal: abortController.signal,
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.message || "Error del servidor");
-        }
-
-        const botReply = data.reply || "No se recibió respuesta.";
-
-        const botMsg: Message = {
-          id: uid(),
-          sender: "bot",
-          text: botReply,
-          time: now(),
-        };
-
-        setMessages((prev) => [...prev, botMsg]);
-
-        // Actualizar historial para mantener contexto
-        setHistory((prev) => [
-          ...prev,
-          { role: "user", parts: [{ text }] },
-          { role: "model", parts: [{ text: botReply }] },
-        ]);
-
-        // Notificar si está cerrado
-        if (!isOpen) {
-          setHasUnread(true);
-        }
-      } catch (error: unknown) {
-        if (error instanceof DOMException && error.name === "AbortError") {
-          return; // Petición cancelada, no hacer nada
-        }
-
-        const errorText =
-          error instanceof Error && error.message
-            ? error.message
-            : "LosaBot no está disponible en este momento. Intenta de nuevo.";
-
-        const errorMsg: Message = {
-          id: uid(),
-          sender: "system",
-          text: errorText,
-          time: now(),
-        };
-        setMessages((prev) => [...prev, errorMsg]);
-      } finally {
-        setIsTyping(false);
-        abortRef.current = null;
-      }
-    },
-    [inputMessage, isTyping, messageCount, history, isOpen]
-  );
-
-  /* ── Render ───────────────────────────────────────────────────── */
   return (
-    <div className="fixed bottom-6 right-6 z-50 font-sans" id="losabot-widget">
-      {/* ─── Botón flotante ─────────────────────────────────────── */}
-      {!isOpen && (
-        <button
-          type="button"
-          onClick={handleOpen}
-          id="losabot-open-btn"
-          aria-label="Abrir LosaBot - Asistente virtual"
-          className="group relative flex items-center justify-center w-[60px] h-[60px] rounded-full text-white shadow-xl hover:shadow-2xl hover:scale-110 active:scale-95 transition-all duration-300"
-          style={{
-            background:
-              "linear-gradient(135deg, #1B6EB6 0%, #144a7e 60%, #0e3a66 100%)",
-            boxShadow: "0 8px 32px rgba(27, 110, 182, 0.35)",
-          }}
-        >
-          <div className="w-[54px] h-[54px] rounded-full overflow-hidden bg-white shadow-inner flex items-center justify-center ring-2 ring-white/80">
-            <img
-              src={BOT_AVATAR}
-              alt="LosaBot"
-              className="w-full h-full object-contain p-0.5 group-hover:scale-110 transition-transform duration-300 select-none"
-            />
-          </div>
+    <div className="losabot-avatar-stage" aria-hidden="true">
+      <img key={wave} src={portrait} className="losabot-avatar-still" data-greet={wave > 0} alt="" />
+      <canvas ref={canvas} data-ready="false" />
+    </div>
+  );
+}
 
-          {/* Indicador de estado online + unread */}
-          <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4">
-            <span
-              className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-                hasUnread ? "bg-amber-400" : "bg-emerald-400"
-              }`}
-            />
-            <span
-              className={`relative inline-flex rounded-full h-4 w-4 border-2 border-white ${
-                hasUnread ? "bg-amber-500" : "bg-emerald-500"
-              }`}
-            />
-          </span>
+function addMessage(sender: Message["sender"], text: string, details?: Pick<Message, "topic" | "source">): Message {
+  return { id: crypto.randomUUID(), sender, text, ...details };
+}
 
-          {/* Tooltip */}
-          <span className="absolute right-[72px] bg-slate-800/95 text-white text-xs font-semibold px-3 py-2 rounded-xl whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none shadow-lg backdrop-blur-sm">
-            LosaBot 🤖
-            <span className="absolute top-1/2 -right-1 -translate-y-1/2 w-2 h-2 bg-slate-800/95 rotate-45" />
-          </span>
+function richText(text: string) {
+  return text.split(/(\*\*[^*]+\*\*)/g).map((part, index) =>
+    part.startsWith("**") && part.endsWith("**")
+      ? <strong key={index}>{part.slice(2, -2)}</strong>
+      : part
+  );
+}
+
+export function ChatbotWidget({ canUseAi = false, sessionId }: { canUseAi?: boolean; sessionId?: string }) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [messages, setMessages] = useState<Message[]>([welcome]);
+  const [pending, setPending] = useState(false);
+  const [useAiNext, setUseAiNext] = useState(false);
+  const [wave, setWave] = useState(0);
+  const [speaking, setSpeaking] = useState(false);
+  const [greeting, setGreeting] = useState(false);
+  const [loadedSession, setLoadedSession] = useState<string | undefined>(undefined);
+  const storageKey = sessionId ? "losabot:" + sessionId : undefined;
+
+  const launcher = useRef<HTMLButtonElement>(null);
+  const input = useRef<HTMLInputElement>(null);
+  const scroll = useRef<HTMLDivElement>(null);
+  const request = useRef<AbortController | null>(null);
+  const speechTimer = useRef<number | undefined>(undefined);
+  const greetingTimer = useRef<number | undefined>(undefined);
+  const aiHistory = useRef<HistoryEntry[]>([]);
+  const links = canUseAi ? adminLinks : userLinks;
+  const pose: CoachPose = pending ? "thinking" : speaking ? "speaking" : "idle";
+
+  useEffect(() => {
+    if (!storageKey) return;
+    try {
+      const saved: unknown = JSON.parse(window.sessionStorage.getItem(storageKey) ?? "null");
+      if (Array.isArray(saved) && saved.length > 0) setMessages((saved as Message[]).slice(-48));
+    } catch {
+      // El chat sigue disponible si el navegador restringe el almacenamiento.
+    }
+    setLoadedSession(storageKey);
+  }, [storageKey]);
+
+  useEffect(() => {
+    if (!storageKey || loadedSession !== storageKey) return;
+    try {
+      window.sessionStorage.setItem(storageKey, JSON.stringify(messages));
+    } catch {
+      // Los mensajes aún quedan disponibles durante la sesión del panel.
+    }
+  }, [loadedSession, messages, storageKey]);
+
+  useEffect(() => {
+    if (open) input.current?.focus();
+  }, [open]);
+
+  useEffect(() => {
+    if (open && scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight;
+  }, [messages, pending, open]);
+
+  useEffect(() => () => {
+    request.current?.abort();
+    window.clearTimeout(speechTimer.current);
+    window.clearTimeout(greetingTimer.current);
+  }, []);
+
+  function close() {
+    setOpen(false);
+    setUseAiNext(false);
+    window.requestAnimationFrame(() => launcher.current?.focus());
+  }
+
+  function greet() {
+    setWave((value) => value + 1);
+    setGreeting(true);
+    window.clearTimeout(greetingTimer.current);
+    greetingTimer.current = window.setTimeout(() => setGreeting(false), 1800);
+  }
+
+  function reset() {
+    request.current?.abort();
+    request.current = null;
+    aiHistory.current = [];
+    setDraft("");
+    setMessages([welcome]);
+    setPending(false);
+    setUseAiNext(false);
+    setSpeaking(false);
+    input.current?.focus();
+  }
+
+  function append(message: Message) {
+    setMessages((items) => [...items.slice(-47), message]);
+  }
+
+  async function send(text: string, askAi = false) {
+    const message = text.trim();
+    if (!message || request.current) return;
+    const controller = new AbortController();
+    request.current = controller;
+    setPending(true);
+    setSpeaking(false);
+    setUseAiNext(false);
+    append(addMessage("user", message));
+    setDraft("");
+    try {
+      const endpoint = askAi ? "consulta-ia" : "";
+      const response = await fetch(API_BASE_URL + "/chatbot/" + endpoint, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message,
+          ...(askAi ? { history: aiHistory.current } : {}),
+        }),
+        signal: controller.signal,
+      });
+      if (response.redirected) throw new Error("Tu sesión venció. Vuelve a iniciar sesión.");
+      const payload = await response.json() as { reply?: string; message?: string; topic?: Topic; source?: string };
+      if (!response.ok || !payload.reply) {
+        throw new Error(payload.message || "LosaBot no pudo responder. Intenta otra vez.");
+      }
+      if (controller.signal.aborted) return;
+      append(addMessage("bot", payload.reply, {
+        source: askAi && payload.source === "local" ? "fallback" : payload.source,
+        topic: payload.topic,
+      }));
+      if (askAi && payload.source && payload.source !== "local") {
+        aiHistory.current = [
+          ...aiHistory.current,
+          { role: "user", parts: [{ text: message }] } as HistoryEntry,
+          { role: "model", parts: [{ text: [...payload.reply].slice(0, 1000).join("") }] } as HistoryEntry,
+        ].slice(-4);
+      }
+      setSpeaking(true);
+      window.clearTimeout(speechTimer.current);
+      speechTimer.current = window.setTimeout(() => setSpeaking(false), 1200);
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        append(addMessage("error", error instanceof Error ? error.message : "LosaBot no está disponible."));
+      }
+    } finally {
+      if (request.current === controller) {
+        request.current = null;
+        setPending(false);
+      }
+    }
+  }
+
+  return (
+    <div className="losabot-widget" onKeyDown={(event) => {
+      if (open && event.key === "Escape") {
+        event.stopPropagation();
+        close();
+      }
+    }}>
+      {!open && (
+        <button type="button" ref={launcher} className="losabot-launcher" id="losabot-open-btn"
+          aria-label="Abrir LosaBot" aria-expanded={false} onClick={() => { setOpen(true); greet(); }}>
+          <span className="losabot-launcher-portrait" aria-hidden="true"><img src={portrait} alt="" /></span>
+          <span>LosaBot</span>
+          <span className="losabot-launcher-status" aria-hidden="true" />
         </button>
       )}
-
-      {/* ─── Ventana del chat ───────────────────────────────────── */}
-      {isOpen && (
-        <div
-          className="flex flex-col w-[370px] sm:w-[400px] h-[540px] rounded-3xl shadow-2xl border overflow-hidden"
-          id="losabot-window"
-          style={{
-            background: "#ffffff",
-            borderColor: "rgba(0,0,0,0.08)",
-            boxShadow:
-              "0 25px 60px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.04)",
-            animation: "chatbotSlideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1)",
-          }}
-        >
-          {/* ── Header ─────────────────────────────────────────── */}
-          <div
-            className="flex items-center justify-between px-5 py-3.5"
-            style={{
-              background:
-                "linear-gradient(135deg, #1B6EB6 0%, #144a7e 60%, #0e3a66 100%)",
-            }}
-          >
-            <div className="flex items-center gap-3">
-              <div className="relative w-11 h-11 rounded-2xl bg-white shadow-md flex items-center justify-center border border-white/40 overflow-hidden shrink-0">
-                <img
-                  src={BOT_AVATAR}
-                  alt="LosaBot"
-                  className="w-full h-full object-contain p-0.5 select-none"
-                />
-                <span className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-400 border-2 border-white rounded-full z-10" />
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-white tracking-tight">
-                  LosaBot - UNHEVAL
-                </h3>
-                <p className="text-[11px] text-cyan-200/90 font-medium flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
-                  En línea • Asistente IA
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-1">
-              {/* Botón limpiar chat */}
-              <button
-                type="button"
-                onClick={handleClearChat}
-                aria-label="Limpiar conversación"
-                title="Limpiar chat"
-                className="p-2 rounded-xl text-white/60 hover:text-white hover:bg-white/10 transition-colors"
-              >
-                <FaRegTrashAlt size={13} />
+      {open && (
+        <section className="losabot-panel" role="dialog" aria-labelledby="losabot-title">
+          <div className="losabot-hero">
+            <div className="losabot-court" aria-hidden="true" />
+            <div className="losabot-tools">
+              <button type="button" onClick={reset} aria-label="Borrar conversación" title="Borrar conversación">
+                <FaRegTrashAlt aria-hidden="true" />
               </button>
-              {/* Botón cerrar */}
-              <button
-                type="button"
-                onClick={handleClose}
-                aria-label="Cerrar chat"
-                className="p-2 rounded-xl text-white/60 hover:text-white hover:bg-white/10 transition-colors"
-              >
-                <FaTimes size={15} />
+              <button type="button" onClick={close} aria-label="Cerrar LosaBot" title="Cerrar LosaBot">
+                <FaTimes aria-hidden="true" />
               </button>
             </div>
+            <div className="losabot-intro">
+              <h2 id="losabot-title">LosaBot</h2>
+              <p>Tu entrenador de cancha</p>
+              <button type="button" onClick={greet} className="losabot-wave">
+                <FaHandPaper aria-hidden="true" /> Saludar
+              </button>
+              <span className="sr-only" role="status">{greeting ? "LosaBot te devuelve el saludo." : ""}</span>
+            </div>
+            <CoachAvatar pose={pose} wave={wave} />
           </div>
 
-          {/* ── Mensajes ───────────────────────────────────────── */}
-          <div className="flex-1 px-4 py-3 overflow-y-auto space-y-3 bg-slate-50/80">
-            {messages.map((msg) => (
-              <div
-                key={msg.id}
-                className={`flex gap-2.5 ${
-                  msg.sender === "user" ? "justify-end" : "justify-start"
-                }`}
-                style={{
-                  animation: "chatbotFadeIn 0.25s ease-out",
-                }}
-              >
-                {/* Avatar del bot */}
-                {msg.sender === "bot" && (
-                  <div className="w-8 h-8 rounded-full overflow-hidden border border-slate-200 shrink-0 shadow-xs mt-0.5 bg-white ring-1 ring-blue-100 flex items-center justify-center">
-                    <img
-                      src={BOT_AVATAR}
-                      alt="LosaBot"
-                      className="w-full h-full object-contain p-0.5 select-none"
-                    />
+          <div className="losabot-chat" ref={scroll} role="log" aria-label="Conversación con LosaBot">
+            {messages.map((message) => {
+              const action = message.topic ? links[message.topic] : undefined;
+              return (
+                <div key={message.id} className={"losabot-message losabot-message--" + message.sender}>
+                  <div className="losabot-bubble">
+                    <span className="sr-only">{message.sender === "user" ? "Tú: " : "LosaBot: "}</span>
+                    <p>{richText(message.text)}</p>
+                    {message.source === "fallback" && <small>DeepSeek no respondió. Se usó la guía local.</small>}
+                    {message.source && !["local", "fallback"].includes(message.source) && (
+                      <small className="losabot-reply-source"><FaBolt aria-hidden="true" /> Respuesta con IA</small>
+                    )}
+                    {action && <Link to={action[1]} onClick={close}>{action[0]} <FaArrowRight aria-hidden="true" /></Link>}
                   </div>
-                )}
-
-                {/* Burbuja del mensaje */}
-                <div
-                  className={`max-w-[82%] rounded-2xl px-3.5 py-2.5 text-[13px] leading-relaxed shadow-sm whitespace-pre-line ${
-                    msg.sender === "user"
-                      ? "text-white rounded-br-sm"
-                      : msg.sender === "system"
-                        ? "bg-amber-50 text-amber-800 border border-amber-200/80 rounded-bl-sm text-xs italic"
-                        : "bg-white text-slate-700 border border-slate-200/80 rounded-bl-sm"
-                  }`}
-                  style={
-                    msg.sender === "user"
-                      ? {
-                          background:
-                            "linear-gradient(135deg, #1B6EB6 0%, #165b9a 100%)",
-                        }
-                      : undefined
-                  }
-                >
-                  <p>
-                    {msg.sender === "bot" ? renderBold(msg.text) : msg.text}
-                  </p>
-                  <span
-                    className={`block text-[9px] mt-1 text-right ${
-                      msg.sender === "user"
-                        ? "text-blue-100/80"
-                        : msg.sender === "system"
-                          ? "text-amber-400"
-                          : "text-slate-400"
-                    }`}
-                  >
-                    {msg.time}
-                  </span>
                 </div>
-              </div>
+              );
+            })}
+            {pending && <p className="losabot-wait"><span aria-hidden="true" /> LosaBot está preparando la respuesta…</p>}
+          </div>
+
+          <div className="losabot-shortcuts" aria-label="Consultas rápidas">
+            {shortcuts.map(({ label, text, icon: Icon }) => (
+              <button key={label} type="button" onClick={() => void send(text)} disabled={pending}>
+                <Icon aria-hidden="true" /> {label}
+              </button>
             ))}
-
-            {/* Indicador de "escribiendo..." */}
-            {isTyping && (
-              <div
-                className="flex gap-2.5 justify-start"
-                style={{ animation: "chatbotFadeIn 0.2s ease-out" }}
-              >
-                <div className="w-8 h-8 rounded-full overflow-hidden border border-slate-200 shrink-0 shadow-xs mt-0.5 bg-white ring-1 ring-blue-100 flex items-center justify-center">
-                  <img
-                    src={BOT_AVATAR}
-                    alt="LosaBot"
-                    className="w-full h-full object-cover object-top scale-115 select-none"
-                    style={{ imageRendering: "-webkit-optimize-contrast" }}
-                  />
-                </div>
-                <div className="bg-white border border-slate-200/80 rounded-2xl rounded-bl-sm px-4 py-3 shadow-sm">
-                  <div className="flex items-center gap-1.5">
-                    <div className="flex gap-1">
-                      <span
-                        className="w-2 h-2 rounded-full bg-[#1B6EB6]/60"
-                        style={{
-                          animation: "chatbotBounce 1.4s infinite ease-in-out",
-                        }}
-                      />
-                      <span
-                        className="w-2 h-2 rounded-full bg-[#1B6EB6]/60"
-                        style={{
-                          animation:
-                            "chatbotBounce 1.4s infinite ease-in-out 0.2s",
-                        }}
-                      />
-                      <span
-                        className="w-2 h-2 rounded-full bg-[#1B6EB6]/60"
-                        style={{
-                          animation:
-                            "chatbotBounce 1.4s infinite ease-in-out 0.4s",
-                        }}
-                      />
-                    </div>
-                    <span className="text-[10px] text-slate-400 ml-1">
-                      LosaBot está escribiendo…
-                    </span>
-                  </div>
-                </div>
+          </div>
+          <div className="losabot-composer">
+            {canUseAi && (
+              <div className="losabot-modes">
+                <span>{useAiNext ? "La próxima consulta usará DeepSeek y puede consumir saldo." : "Guía local · Sin tokens"}</span>
+                <button type="button" onClick={() => setUseAiNext(!useAiNext)} disabled={pending} aria-pressed={useAiNext}>
+                  <FaBolt aria-hidden="true" /> Usar IA
+                </button>
               </div>
             )}
-
-            <div ref={messagesEndRef} />
-          </div>
-
-          {/* ── Preguntas sugeridas ────────────────────────────── */}
-          {messages.length <= 2 && !isTyping && (
-            <div className="px-3 py-2 bg-white border-t border-slate-100">
-              <div className="flex gap-1.5 overflow-x-auto pb-0.5 scrollbar-hide">
-                {PREGUNTAS_SUGERIDAS.map((faq, i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => handleSendMessage(faq)}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-50 hover:bg-blue-50 hover:text-[#1B6EB6] text-slate-600 text-[11px] font-medium whitespace-nowrap transition-colors border border-slate-200/60 hover:border-blue-200"
-                  >
-                    <FaQuestionCircle
-                      size={10}
-                      className="text-[#1B6EB6]/60"
-                    />
-                    {faq}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* ── Footer: input + counter ────────────────────────── */}
-          <div className="bg-white border-t border-slate-200">
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                handleSendMessage();
-              }}
-              className="flex items-center gap-2 p-3"
-            >
-              <input
-                ref={inputRef}
-                type="text"
-                id="losabot-input"
-                placeholder={
-                  messageCount >= MAX_MESSAGES_PER_SESSION
-                    ? "Límite de mensajes alcanzado"
-                    : "Escribe tu consulta aquí..."
-                }
-                value={inputMessage}
-                onChange={(e) => setInputMessage(e.target.value)}
-                disabled={isTyping || messageCount >= MAX_MESSAGES_PER_SESSION}
-                maxLength={500}
-                className="flex-1 px-3.5 py-2.5 text-[13px] bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-[#1B6EB6] focus:ring-2 focus:ring-[#1B6EB6]/10 focus:bg-white text-slate-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed placeholder:text-slate-400"
-              />
-              <button
-                type="submit"
-                disabled={
-                  !inputMessage.trim() ||
-                  isTyping ||
-                  messageCount >= MAX_MESSAGES_PER_SESSION
-                }
-                aria-label="Enviar mensaje"
-                id="losabot-send-btn"
-                className="p-2.5 rounded-xl text-white hover:opacity-90 disabled:opacity-30 shadow-sm transition-all active:scale-95"
-                style={{
-                  background:
-                    "linear-gradient(135deg, #1B6EB6 0%, #165b9a 100%)",
-                }}
-              >
-                <FaPaperPlane size={13} />
+            <form onSubmit={(event) => { event.preventDefault(); void send(draft, useAiNext); }}>
+              <input id="losabot-input" ref={input} value={draft} maxLength={500}
+                onChange={(event) => setDraft(event.target.value)} aria-label="Mensaje para LosaBot"
+                placeholder={useAiNext ? "Consulta a DeepSeek sin datos personales" : "Escribe una consulta…"} />
+              <button type="submit" id="losabot-send-btn" aria-label="Enviar mensaje" disabled={!draft.trim() || pending}>
+                <FaPaperPlane aria-hidden="true" />
               </button>
             </form>
-            {/* Contador de mensajes */}
-            <div className="flex justify-between items-center px-4 pb-2 -mt-1">
-              <span className="text-[9px] text-slate-400">
-                {messageCount}/{MAX_MESSAGES_PER_SESSION} consultas
-              </span>
-              <span className="text-[9px] text-slate-400">
-                Powered by LosaBot IA
-              </span>
-            </div>
           </div>
-        </div>
+        </section>
       )}
-
-      {/* ── Keyframes inyectados inline (scoped) ────────────────── */}
-      <style>{`
-        @keyframes chatbotSlideUp {
-          from { opacity: 0; transform: translateY(24px) scale(0.96); }
-          to   { opacity: 1; transform: translateY(0) scale(1); }
-        }
-        @keyframes chatbotFadeIn {
-          from { opacity: 0; transform: translateY(6px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes chatbotBounce {
-          0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
-          40% { transform: scale(1); opacity: 1; }
-        }
-        .scrollbar-hide::-webkit-scrollbar { display: none; }
-        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
-      `}</style>
     </div>
   );
 }

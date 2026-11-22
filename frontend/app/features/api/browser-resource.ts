@@ -3,7 +3,7 @@ import { api, ApiError, responseHeadersWithCookies } from "~/services/api.server
 
 const browserRoutes: Record<string, RegExp> = {
   GET: /^permisos\/(?:detalles\/[1-9]\d*|[1-9]\d*\/documento)$/,
-  POST: /^(?:imagenes\/upload|chatbot\/?|auth\/(?:forgot-password|reset-password))$/,
+  POST: /^(?:imagenes\/upload|chatbot(?:\/consulta-ia|\/)?|auth\/(?:forgot-password|reset-password))$/,
   DELETE: /^imagenes\/[1-9]\d*$/,
 };
 
@@ -36,7 +36,7 @@ async function forward({ request, params }: ActionFunctionArgs | LoaderFunctionA
       } catch {
         return errorResponse("El contenido de la solicitud es inválido", 400);
       }
-      result = multipart ? await api.postForm(endpoint, request, payload as FormData) : await api.post(endpoint, request, payload);
+      result = multipart ? await api.postForm(endpoint, request, payload as FormData) : await api.post(endpoint, request, payload, path === "chatbot/consulta-ia" ? 30_000 : undefined);
     }
     const headers = responseHeadersWithCookies(request);
     headers.set("Cache-Control", "no-store");

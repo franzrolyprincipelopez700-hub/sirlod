@@ -18,6 +18,28 @@ def test_local_chatbot_rejects_unrelated_topics() -> None:
     assert "solo puedo orientarte" in reply
 
 
+def test_special_permission_and_status_are_distinguished() -> None:
+    assert "10 MB" in local_reply("¿Qué PDF requiere un permiso especial?", "07:00", "19:00")
+    assert "Mis Permisos" in local_reply("¿Cómo veo el estado de mis permisos?", "07:00", "19:00")
+
+
+@pytest.mark.asyncio
+async def test_standard_chat_keeps_provider_key_out_of_local_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    from unittest.mock import AsyncMock, MagicMock
+
+    database = AsyncMock()
+    database.get.return_value = None
+    api_client = MagicMock()
+    monkeypatch.setattr(settings, "deepseek_api_key", "test-key")
+    monkeypatch.setattr(service.httpx, "AsyncClient", api_client)
+
+    reply, source = await service.chat(database, "¿Cuáles son los horarios?", [])
+
+    assert source == "local"
+    assert "07:00" in reply
+    api_client.assert_not_called()
+
+
 @pytest.mark.asyncio
 async def test_chatbot_uses_selected_deepseek_provider(monkeypatch) -> None:
     captured: dict[str, Any] = {}
@@ -53,7 +75,7 @@ async def test_chatbot_uses_selected_deepseek_provider(monkeypatch) -> None:
     monkeypatch.setattr(settings, "deepseek_model", "deepseek-flash")
     monkeypatch.setattr(service.httpx, "AsyncClient", FakeClient)
 
-    reply, source = await service.chat(FakeDatabase(), "¿Cómo reservo?", [])  # type: ignore[arg-type]
+    reply, source = await service.chat(FakeDatabase(), "¿Cómo reservo?", [], use_ai=True)  # type: ignore[arg-type]
 
     assert reply == "Respuesta de DeepSeek"
     assert source == "deepseek"
@@ -97,7 +119,7 @@ async def test_chatbot_uses_selected_openai_provider(monkeypatch) -> None:
     monkeypatch.setattr(settings, "openai_model", "gpt-4o-mini")
     monkeypatch.setattr(service.httpx, "AsyncClient", FakeClient)
 
-    reply, source = await service.chat(FakeDatabase(), "¿Cómo reservo?", [])  # type: ignore[arg-type]
+    reply, source = await service.chat(FakeDatabase(), "¿Cómo reservo?", [], use_ai=True)  # type: ignore[arg-type]
 
     assert reply == "Respuesta de ChatGPT OpenAI"
     assert source == "openai"
