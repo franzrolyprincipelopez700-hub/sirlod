@@ -150,7 +150,9 @@ S3_REPORT_KEY_PREFIX=reportes
 LosaBot responde las preguntas frecuentes con reglas locales y los datos de SIRLOD. Si necesita
 elaborar la respuesta, el chat autenticado usa automáticamente el proveedor de `AI_PROVIDER` con
 horarios y disponibilidad consultados en PostgreSQL. Los estados personales se consultan por separado.
-El entrenador usa Three.js en el navegador y habla con una voz local en español del dispositivo, si está disponible.
+El entrenador usa Three.js y una voz local en español. Se puede silenciar desde el panel.
+El micrófono transcribe en el dispositivo cuando el navegador admite el dictado local. La primera vez
+puede descargar el paquete de español. El usuario revisa el texto antes de enviarlo.
 La revisión de PDFs usa el proveedor configurado
 en `DOCUMENT_AI_PROVIDER` (`openai` o `gemini`). Con Gemini usa `GEMINI_API_KEY` y `GEMINI_MODEL`.
 

@@ -113,7 +113,11 @@
 .losabot-intro p { margin: .36rem 0 .65rem; color: #bfe9e4; font-size: .83rem; font-weight: 550; }
 .losabot-wave { gap: .42rem; min-height: 1.92rem; padding: .15rem .56rem; border-radius: .5rem; font-size: .73rem; }
 .losabot-wave svg { color: #95e9c5; }
-.losabot-speaking { display: inline-flex; gap: 3px; align-items: center; margin-left: .48rem; }
+.losabot-coach-actions { display: flex; align-items: center; gap: .38rem; flex-wrap: wrap; }
+.losabot-voice-toggle { white-space: nowrap; }
+.losabot-voice-toggle[data-muted="true"] { background: #e1f7ef; color: #163949; }
+.losabot-voice-toggle[data-muted="true"] svg { color: #286677; }
+.losabot-speaking { display: inline-flex; gap: 3px; align-items: center; margin-left: .08rem; }
 .losabot-speaking i { width: 3px; height: .8rem; border-radius: 4px; background: #9eedce; animation: losabot-voice .42s infinite alternate ease-in-out; }
 .losabot-speaking i:nth-child(2) { animation-delay: -.15s; }
 .losabot-speaking i:nth-child(3) { animation-delay: -.28s; }
@@ -203,7 +207,8 @@
 .losabot-shortcuts svg { flex-shrink: 0; color: #177769; }
 
 .losabot-composer { display: grid; gap: .35rem; padding: .48rem .83rem .8rem; background: #fff; }
-.losabot-voice-note { margin: 0; color: var(--losa-muted); font-size: .72rem; }
+.losabot-voice-note { margin: 0; color: var(--losa-muted); font-size: .75rem; }
+.losabot-voice-note:empty { display: none; }
 .losabot-composer form { display: flex; align-items: stretch; gap: .42rem; }
 .losabot-composer input {
   width: 100%;
@@ -226,6 +231,14 @@
   color: #fff;
 }
 .losabot-composer form button:hover:not(:disabled) { background: #1b7880; }
+.losabot-composer form .losabot-mic { background: #eaf5f5; border: 1px solid #d0e8e8; color: #155e65; }
+.losabot-composer form .losabot-mic:hover:not(:disabled) { background: #d7efea; }
+.losabot-composer form .losabot-mic[data-phase="listening"] {
+  background: #fcece6;
+  border-color: #efb5a5;
+  color: #a23b25;
+  box-shadow: 0 0 0 3px #fcece6;
+}
 
 @media (max-width: 460px) {
   .losabot-widget { right: max(.65rem, env(safe-area-inset-right)); bottom: max(.65rem, env(safe-area-inset-bottom)); }

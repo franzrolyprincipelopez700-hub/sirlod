@@ -1,147 +1,260 @@
 import {
-  AmbientLight, CapsuleGeometry, CylinderGeometry, DirectionalLight, Group,
-  HemisphereLight, Mesh, MeshStandardMaterial, OrthographicCamera, Scene,
-  SphereGeometry, TorusGeometry, TubeGeometry, CatmullRomCurve3, Vector3, WebGLRenderer,
-  type BufferGeometry,
+  AmbientLight, CapsuleGeometry, CatmullRomCurve3, CylinderGeometry, DirectionalLight, Group,
+  HemisphereLight, LatheGeometry, MathUtils, Mesh, MeshStandardMaterial, OrthographicCamera, Scene,
+  SphereGeometry, TubeGeometry, Vector2, Vector3, WebGLRenderer, type BufferGeometry,
 } from "three";
 
-export type CoachPose = "idle" | "thinking" | "speaking";
+export type CoachPose = "idle" | "listening" | "thinking" | "speaking";
+export type CoachGesture = "offer-left" | "offer-right" | "explain" | "point" | "count" | "cheer";
 export interface CoachSpeechBeat {
   at: number;
   openness: number;
   rounded: boolean;
+  gesture: CoachGesture;
+  gestureAt: number;
 }
 export interface CoachMotion {
   pose: CoachPose;
   wave: number;
   speechBeat?: { readonly current: CoachSpeechBeat | null };
 }
+type Point = [number, number, number];
+type HandShape = "relaxed" | "open" | "point" | "two" | "fist";
+interface ArmPose {
+  lift: number;
+  forward: number;
+  bend: number;
+  flex: number;
+  turn: number;
+  wrist: number;
+  shape: HandShape;
+}
+
+const rest: ArmPose = { lift: 0.105, forward: -0.04, bend: 0.04, flex: -0.20, turn: 0.36, wrist: 0, shape: "relaxed" };
+const openPalm: ArmPose = { lift: 0.36, forward: -0.43, bend: 0.46, flex: -0.82, turn: 1.05, wrist: -0.22, shape: "open" };
+const secondPalm: ArmPose = { ...openPalm, lift: 0.28, bend: 0.24, flex: -0.65, wrist: -0.07 };
+const greeting: ArmPose = { lift: 1.36, forward: -0.12, bend: 1.22, flex: -0.20, turn: 0.15, wrist: 0, shape: "open" };
+const explain: Record<CoachGesture, [ArmPose, ArmPose]> = {
+  "offer-left": [openPalm, rest],
+  "offer-right": [rest, openPalm],
+  explain: [secondPalm, { ...openPalm, lift: 0.49, flex: -0.64 }],
+  point: [rest, { lift: 0.84, forward: -0.30, bend: 0.38, flex: -0.45, turn: 0.32, wrist: 0.25, shape: "point" }],
+  count: [{ lift: 0.60, forward: -0.16, bend: 1.23, flex: -0.26, turn: 0.22, wrist: 0.1, shape: "two" }, rest],
+  cheer: [secondPalm, { lift: 0.62, forward: -0.35, bend: 0.92, flex: -0.70, turn: 0.54, wrist: 0, shape: "fist" }],
+};
 
 export function mountCoach(canvas: HTMLCanvasElement, motion: () => CoachMotion) {
   const renderer = new WebGLRenderer({ canvas, alpha: true, antialias: true, powerPreference: "low-power" });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.65));
   const scene = new Scene();
   const camera = new OrthographicCamera(-1, 1, 1, -1, 0.1, 20);
-  camera.position.set(0, 0.22, 5.3);
-  camera.lookAt(0, 0.16, 0);
+  camera.position.set(0, 0.28, 5.5);
+  camera.lookAt(0, 0.17, 0);
 
-  scene.add(new HemisphereLight(0xf2ffff, 0x173150, 2.1), new AmbientLight(0xeef7ff, 0.35));
-  const key = new DirectionalLight(0xffe9d3, 2.5);
-  key.position.set(-3, 5, 4);
-  const rim = new DirectionalLight(0x5bebd7, 2.2);
-  rim.position.set(3, 1, -2);
+  scene.add(new HemisphereLight(0xf6ffff, 0x334468, 2.1), new AmbientLight(0xeaf7ff, 0.30));
+  const key = new DirectionalLight(0xffe3c3, 2.45);
+  key.position.set(-3, 4.5, 4);
+  const rim = new DirectionalLight(0x7cf5d5, 2.1);
+  rim.position.set(3, 1.7, -2.5);
   scene.add(key, rim);
 
   const materials = {
-    skin: new MeshStandardMaterial({ color: 0xc47f52, roughness: 0.7 }),
-    cheek: new MeshStandardMaterial({ color: 0xcf7952, roughness: 0.8 }),
-    hair: new MeshStandardMaterial({ color: 0x251d25, roughness: 0.64 }),
-    hairLight: new MeshStandardMaterial({ color: 0x362634, roughness: 0.58 }),
-    dark: new MeshStandardMaterial({ color: 0x1c202c, roughness: 0.5 }),
-    navy: new MeshStandardMaterial({ color: 0x145780, roughness: 0.74 }),
-    deep: new MeshStandardMaterial({ color: 0x123654, roughness: 0.8 }),
-    mint: new MeshStandardMaterial({ color: 0x50e4ba, roughness: 0.45 }),
-    white: new MeshStandardMaterial({ color: 0xfff7e4, roughness: 0.58 }),
-    gold: new MeshStandardMaterial({ color: 0xf6b554, roughness: 0.4, metalness: 0.22 }),
-    mouth: new MeshStandardMaterial({ color: 0x683b3e, roughness: 0.82 }),
+    skin: new MeshStandardMaterial({ color: 0xbd7c51, roughness: 0.70 }),
+    warmSkin: new MeshStandardMaterial({ color: 0xb76a4f, roughness: 0.77 }),
+    lips: new MeshStandardMaterial({ color: 0x774540, roughness: 0.65 }),
+    mouth: new MeshStandardMaterial({ color: 0x38232a, roughness: 0.78 }),
+    ink: new MeshStandardMaterial({ color: 0x161b23, roughness: 0.59 }),
+    hair: new MeshStandardMaterial({ color: 0x221c21, roughness: 0.54 }),
+    hairLight: new MeshStandardMaterial({ color: 0x33282a, roughness: 0.59 }),
+    iris: new MeshStandardMaterial({ color: 0x51342a, roughness: 0.43 }),
+    chalk: new MeshStandardMaterial({ color: 0xf5f0de, roughness: 0.68 }),
+    shell: new MeshStandardMaterial({ color: 0x2c567d, roughness: 0.76 }),
+    navy: new MeshStandardMaterial({ color: 0x182d46, roughness: 0.78 }),
+    sky: new MeshStandardMaterial({ color: 0x8ad5e4, roughness: 0.67 }),
+    accent: new MeshStandardMaterial({ color: 0xc7ee63, roughness: 0.49 }),
+    steel: new MeshStandardMaterial({ color: 0x7e9f9d, roughness: 0.37, metalness: 0.32 }),
   };
   const geometries = new Set<BufferGeometry>();
+  const sphere = new SphereGeometry(1, 26, 18);
+  const fingerBone = new CapsuleGeometry(0.015, 0.024, 4, 10);
+  const fingerTip = new CapsuleGeometry(0.0145, 0.016, 4, 10);
 
-  function mesh(parent: Group, geo: BufferGeometry, material: MeshStandardMaterial, x: number, y: number, z: number) {
+  function mesh(parent: Group, geo: BufferGeometry, material: MeshStandardMaterial, ...at: Point) {
     geometries.add(geo);
     const object = new Mesh(geo, material);
-    object.position.set(x, y, z);
+    object.position.set(...at);
     parent.add(object);
     return object;
   }
 
-  const sphere = new SphereGeometry(1, 24, 16);
-  function oval(parent: Group, material: MeshStandardMaterial, at: [number, number, number], size: [number, number, number]) {
+  function oval(parent: Group, material: MeshStandardMaterial, at: Point, size: Point) {
     const object = mesh(parent, sphere, material, ...at);
     object.scale.set(...size);
     return object;
   }
 
-  function line(parent: Group, material: MeshStandardMaterial, points: [number, number, number][], radius: number) {
+  function line(parent: Group, material: MeshStandardMaterial, points: Point[], radius: number) {
     const path = new CatmullRomCurve3(points.map((point) => new Vector3(...point)));
     return mesh(parent, new TubeGeometry(path, 18, radius, 6), material, 0, 0, 0);
   }
 
-  function group(parent: Group, x: number, y: number, z: number) {
+  function group(parent: Group, ...at: Point) {
     const child = new Group();
-    child.position.set(x, y, z);
+    child.position.set(...at);
     parent.add(child);
     return child;
   }
 
+  function profile(parent: Group, material: MeshStandardMaterial, points: [number, number][], depth: number) {
+    const geo = new LatheGeometry(points.map(([radius, height]) => new Vector2(radius, height)), 40);
+    const object = mesh(parent, geo, material, 0, 0, 0);
+    object.scale.z = depth;
+    return object;
+  }
+
   const body = new Group();
   scene.add(body);
-  oval(body, materials.deep, [0, -0.81, 0], [0.40, 0.31, 0.23]);
-  oval(body, materials.navy, [0, -0.35, 0], [0.47, 0.59, 0.26]);
-  oval(body, materials.deep, [0, 0.14, 0.003], [0.28, 0.13, 0.215]);
-  mesh(body, new CylinderGeometry(0.128, 0.155, 0.33, 20), materials.skin, 0, 0.29, 0);
-  line(body, materials.white, [[0, 0.09, 0.228], [0, -0.33, 0.265], [0, -0.74, 0.19]], 0.012);
-  line(body, materials.mint, [
-    [-0.14, 0.22, 0.12], [-0.13, 0.03, 0.20], [-0.088, -0.16, 0.25],
-    [0.025, -0.35, 0.281], [0.13, -0.02, 0.224], [0.15, 0.17, 0.14],
-  ], 0.017);
-  oval(body, materials.gold, [0.025, -0.37, 0.288], [0.064, 0.052, 0.027]);
-  oval(body, materials.dark, [0.015, -0.368, 0.313], [0.016, 0.015, 0.003]);
-  oval(body, materials.mint, [-0.24, -0.16, 0.216], [0.063, 0.052, 0.018]);
-  line(body, materials.deep, [[-0.27, -0.169, 0.23], [-0.248, -0.183, 0.232], [-0.219, -0.142, 0.231]], 0.008);
+  oval(body, materials.navy, [0, -0.89, 0], [0.355, 0.28, 0.212]);
+  profile(body, materials.shell, [
+    [0, -0.92], [0.32, -0.89], [0.345, -0.78], [0.333, -0.62], [0.365, -0.44],
+    [0.419, -0.25], [0.476, -0.105], [0.487, 0.025], [0.428, 0.105], [0.33, 0.165], [0.146, 0.218], [0, 0.225],
+  ], 0.65);
+  oval(body, materials.navy, [0, 0.182, 0.017], [0.214, 0.080, 0.139]);
+  mesh(body, new CylinderGeometry(0.107, 0.124, 0.29, 24), materials.skin, 0, 0.272, 0.038);
+  line(body, materials.navy, [[0, 0.16, 0.139], [0, 0.015, 0.32], [0, -0.41, 0.256], [0, -0.83, 0.225]], 0.016);
+  line(body, materials.sky, [
+    [-0.414, 0.075, 0.142], [-0.365, 0.067, 0.215], [-0.301, 0.043, 0.259], [-0.239, -0.006, 0.286],
+  ], 0.014);
+  line(body, materials.sky, [
+    [0.414, 0.075, 0.142], [0.365, 0.067, 0.215], [0.301, 0.043, 0.259], [0.239, -0.006, 0.286],
+  ], 0.014);
+  line(body, materials.accent, [
+    [-0.103, 0.186, 0.163], [-0.139, 0.082, 0.286], [-0.117, -0.085, 0.313], [0.026, -0.255, 0.291],
+    [0.135, -0.077, 0.306], [0.147, 0.079, 0.288], [0.112, 0.187, 0.162],
+  ], 0.012);
+  oval(body, materials.accent, [0.032, -0.275, 0.306], [0.052, 0.037, 0.022]);
+  oval(body, materials.navy, [0.02, -0.275, 0.326], [0.015, 0.012, 0.006]);
+  line(body, materials.chalk, [
+    [-0.269, -0.218, 0.227], [-0.255, -0.228, 0.237], [-0.225, -0.192, 0.256],
+  ], 0.013);
+  line(body, materials.navy, [[-0.268, -0.58, 0.153], [-0.195, -0.458, 0.209]], 0.013);
+  line(body, materials.navy, [[0.268, -0.58, 0.153], [0.195, -0.458, 0.209]], 0.013);
 
-  const head = group(body, 0, 0.56, 0.025);
-  oval(head, materials.skin, [0, 0.015, 0], [0.363, 0.425, 0.325]);
-  const jaw = oval(head, materials.skin, [0, -0.15, 0.09], [0.285, 0.254, 0.257]);
-  for (const side of [-1, 1]) {
-    oval(head, materials.skin, [side * 0.345, -0.041, -0.008], [0.078, 0.118, 0.059]);
-    oval(head, materials.cheek, [side * 0.376, -0.043, 0.033], [0.037, 0.065, 0.019]);
+  const head = group(body, 0, 0.599, 0.032);
+  const face = profile(head, materials.skin, [
+    [0, -0.337], [0.111, -0.322], [0.165, -0.281], [0.214, -0.218], [0.247, -0.139],
+    [0.272, -0.055], [0.285, 0.034], [0.277, 0.135], [0.256, 0.22], [0.198, 0.303],
+    [0.11, 0.347], [0, 0.362],
+  ], 0.96);
+  face.geometry.rotateY(Math.PI);
+  const vertices = face.geometry.attributes.position;
+  for (let index = 0; index < vertices.count; index++) {
+    const chin = Math.max(0, MathUtils.smoothstep(-vertices.getY(index), 0.1, 0.32));
+    vertices.setZ(index, vertices.getZ(index) + 0.049 * chin);
   }
-  const cap = mesh(head, new SphereGeometry(1, 26, 16, 0, Math.PI * 2, 0, 1.48), materials.hair, 0, 0.075, -0.023);
-  cap.scale.set(0.377, 0.421, 0.336);
+  face.geometry.computeVertexNormals();
+
   for (const side of [-1, 1]) {
-    oval(head, materials.hair, [side * 0.314, 0.123, 0.02], [0.064, 0.16, 0.166])
-      .rotation.z = side * -0.17;
+    oval(head, materials.skin, [side * 0.279, -0.044, -0.012], [0.055, 0.092, 0.054]).rotation.z = side * -0.16;
+    oval(head, materials.warmSkin, [side * 0.303, -0.041, 0.024], [0.025, 0.055, 0.018]);
+    oval(head, materials.skin, [side * 0.287, -0.062, 0.041], [0.018, 0.029, 0.01]);
   }
-  oval(head, materials.hair, [-0.09, 0.329, 0.17], [0.30, 0.15, 0.20]).rotation.z = 0.33;
-  oval(head, materials.hairLight, [-0.115, 0.378, 0.165], [0.255, 0.105, 0.158]).rotation.z = 0.39;
-  oval(head, materials.hair, [0.14, 0.321, 0.178], [0.21, 0.107, 0.16]).rotation.z = -0.42;
-  oval(head, materials.hairLight, [-0.185, 0.405, 0.15], [0.136, 0.072, 0.118]).rotation.z = 0.53;
+  const cap = mesh(head, new SphereGeometry(1, 32, 18, 0, Math.PI * 2, 0, 1.48), materials.hair, 0, 0.078, -0.021);
+  cap.scale.set(0.288, 0.326, 0.283);
+  oval(head, materials.hair, [-0.247, 0.109, 0.009], [0.039, 0.112, 0.145]).rotation.z = -0.14;
+  oval(head, materials.hairLight, [0.249, 0.117, 0.007], [0.037, 0.105, 0.143]).rotation.z = 0.16;
+  oval(head, materials.hair, [-0.067, 0.316, 0.139], [0.216, 0.127, 0.169]).rotation.z = 0.36;
+  oval(head, materials.hairLight, [-0.10, 0.368, 0.119], [0.203, 0.094, 0.155]).rotation.z = 0.41;
+  oval(head, materials.hair, [0.121, 0.279, 0.133], [0.161, 0.099, 0.157]).rotation.z = -0.39;
+  line(head, materials.hairLight, [
+    [0.161, 0.208, 0.238], [0.097, 0.289, 0.277], [-0.033, 0.334, 0.276], [-0.174, 0.30, 0.249],
+  ], 0.012);
 
   const eyes = [-1, 1].map((side) => {
-    const eye = group(head, side * 0.131, 0.025, 0.287);
-    oval(eye, materials.white, [0, 0, 0], [0.083, 0.064, 0.043]);
-    const pupil = group(eye, 0.004, -0.004, 0.036);
-    oval(pupil, materials.dark, [0, 0, 0], [0.031, 0.039, 0.017]);
-    oval(pupil, materials.white, [-0.010, 0.014, 0.014], [0.010, 0.010, 0.006]);
-    const brow = oval(head, materials.hair, [side * 0.139, 0.128, 0.288], [0.088, 0.022, 0.023]);
-    brow.rotation.z = side * -0.14;
+    const eye = group(head, side * 0.104, 0.031, 0.246);
+    eye.rotation.y = side * 0.20;
+    oval(eye, materials.lips, [0, 0, -0.005], [0.071, 0.041, 0.025]);
+    oval(eye, materials.chalk, [0, -0.002, 0.005], [0.059, 0.033, 0.021]);
+    const pupil = group(eye, 0, 0, 0.022);
+    oval(pupil, materials.iris, [0, 0, 0], [0.023, 0.025, 0.008]);
+    oval(pupil, materials.ink, [0, 0, 0.008], [0.012, 0.014, 0.004]);
+    oval(pupil, materials.chalk, [-0.007, 0.009, 0.012], [0.0065, 0.007, 0.003]);
+    const brow = group(head, side * 0.108, 0.102, 0.248);
+    line(brow, materials.hair, [[side * -0.061, -0.008, 0.009], [0, 0.011, 0.006], [side * 0.059, -0.003, -0.032]], 0.014);
     return { eye, pupil, brow };
   });
-  oval(head, materials.skin, [0, -0.055, 0.327], [0.049, 0.059, 0.054]);
-  const smile = line(head, materials.mouth, [[-0.112, -0.144, 0.303], [-0.045, -0.185, 0.342], [0.039, -0.185, 0.344], [0.102, -0.149, 0.308]], 0.016);
-  const talking = oval(head, materials.mouth, [0, -0.166, 0.333], [0.091, 0.044, 0.016]);
-  talking.visible = false;
-  const teeth = oval(head, materials.white, [0, -0.151, 0.348], [0.063, 0.012, 0.009]);
-  teeth.visible = false;
-  const tongue = oval(head, materials.cheek, [0, -0.193, 0.349], [0.041, 0.009, 0.006]);
-  tongue.visible = false;
+  const noseBridge = oval(head, materials.skin, [0, -0.013, 0.254], [0.027, 0.067, 0.042]);
+  noseBridge.rotation.x = -0.26;
+  oval(head, materials.skin, [0, -0.062, 0.286], [0.043, 0.032, 0.045]);
+  for (const side of [-1, 1]) {
+    oval(head, materials.warmSkin, [side * 0.031, -0.076, 0.292], [0.019, 0.012, 0.017]);
+  }
+  const smile = line(head, materials.lips, [
+    [-0.083, -0.133, 0.235], [-0.035, -0.157, 0.261], [0.024, -0.159, 0.266], [0.082, -0.136, 0.239],
+  ], 0.010);
+  const talking = oval(head, materials.mouth, [0, -0.153, 0.264], [0.074, 0.029, 0.017]);
+  const teeth = oval(head, materials.chalk, [0, -0.138, 0.279], [0.051, 0.009, 0.006]);
+  const tongue = oval(head, materials.warmSkin, [0, -0.173, 0.278], [0.033, 0.008, 0.006]);
 
   function arm(side: number) {
-    const shoulder = group(body, side * 0.36, -0.04, 0);
-    oval(shoulder, materials.navy, [0, -0.065, 0], [0.172, 0.18, 0.18]);
-    mesh(shoulder, new CapsuleGeometry(0.123, 0.23, 5, 16), materials.navy, 0, -0.21, 0);
-    line(shoulder, materials.mint, [[side * 0.111, -0.05, 0.085], [side * 0.105, -0.2, 0.065], [side * 0.08, -0.34, 0.056]], 0.011);
-    const elbow = group(shoulder, 0, -0.38, 0.008);
-    mesh(elbow, new CapsuleGeometry(0.103, 0.17, 5, 16), materials.navy, 0, -0.125, 0.012);
-    mesh(elbow, new CylinderGeometry(0.103, 0.097, 0.056, 18), materials.deep, 0, -0.248, 0.012);
-    oval(elbow, materials.skin, [0, -0.324, 0.024], [0.091, 0.108, 0.067]);
-    oval(elbow, materials.skin, [-side * 0.063, -0.311, 0.05], [0.034, 0.066, 0.039]).rotation.z = side * -0.43;
-    return { shoulder, elbow };
+    const shoulder = group(body, side * 0.408, 0.020, 0.002);
+    oval(shoulder, materials.shell, [0, -0.059, 0], [0.147, 0.165, 0.152]);
+    mesh(shoulder, new CapsuleGeometry(0.105, 0.213, 5, 16), materials.skin, 0, -0.223, 0);
+    mesh(shoulder, new CapsuleGeometry(0.137, 0.115, 5, 18), materials.navy, 0, -0.111, 0.005);
+    mesh(shoulder, new CylinderGeometry(0.124, 0.115, 0.035, 22), materials.sky, 0, -0.214, 0.005);
+    const elbow = group(shoulder, 0, -0.397, 0.002);
+    oval(elbow, materials.skin, [0, -0.113, 0.012], [0.101, 0.172, 0.095]);
+    mesh(elbow, new CylinderGeometry(0.088, 0.064, 0.206, 20), materials.skin, 0, -0.193, 0.014);
+    const wrist = group(elbow, 0, -0.289, 0.014);
+    oval(wrist, materials.skin, [0, -0.047, 0.007], [0.057, 0.069, 0.035]);
+    const fingers = Array.from({ length: 4 }, (_, index) => {
+      const finger = group(wrist, side * ((index - 1.5) * 0.029), -0.095 + (index === 3 ? 0.012 : 0), 0.007);
+      const scale = [0.95, 1.05, 0.98, 0.79][index];
+      finger.scale.setScalar(scale);
+      mesh(finger, fingerBone, materials.skin, 0, -0.023, 0);
+      const tip = group(finger, 0, -0.046, 0);
+      mesh(tip, fingerTip, materials.skin, 0, -0.018, 0);
+      return { finger, tip };
+    });
+    const thumb = group(wrist, -side * 0.044, -0.043, 0.015);
+    mesh(thumb, fingerBone, materials.skin, 0, -0.022, 0);
+    const thumbTip = group(thumb, 0, -0.042, 0);
+    mesh(thumbTip, fingerTip, materials.skin, 0, -0.014, 0);
+    return { side, shoulder, elbow, wrist, fingers, thumb, thumbTip };
   }
   const left = arm(-1);
   const right = arm(1);
-  mesh(left.elbow, new TorusGeometry(0.099, 0.023, 7, 20), materials.gold, 0, -0.236, 0.012).rotation.x = Math.PI / 2;
+  mesh(left.elbow, new CylinderGeometry(0.076, 0.071, 0.055, 20), materials.navy, 0, -0.260, 0.014);
+  oval(left.elbow, materials.steel, [0, -0.255, 0.082], [0.046, 0.040, 0.014]);
+  oval(left.elbow, materials.ink, [0, -0.255, 0.093], [0.033, 0.031, 0.009]);
+  oval(left.elbow, materials.accent, [0, -0.255, 0.102], [0.012, 0.006, 0.002]);
+
+  function poseArm(
+    rig: ReturnType<typeof arm>, target: ArmPose, strength: number, damping: number, salute = 0,
+  ) {
+    const { side, shoulder, elbow, wrist, fingers, thumb, thumbTip } = rig;
+    const blend = (original: number, next: number) => MathUtils.lerp(original, next, strength);
+    const approach = (start: number, end: number) => MathUtils.lerp(start, end, damping);
+    shoulder.rotation.x = approach(shoulder.rotation.x, blend(rest.forward, target.forward));
+    shoulder.rotation.z = approach(shoulder.rotation.z, side * blend(rest.lift, target.lift));
+    elbow.rotation.x = approach(elbow.rotation.x, blend(rest.flex, target.flex));
+    elbow.rotation.z = approach(elbow.rotation.z, side * blend(rest.bend, target.bend));
+    wrist.rotation.x = approach(wrist.rotation.x, -0.12 * strength);
+    wrist.rotation.y = approach(wrist.rotation.y, side * blend(rest.turn, target.turn) + 0.18 * salute);
+    wrist.rotation.z = approach(wrist.rotation.z, side * blend(rest.wrist, target.wrist) + 0.30 * salute);
+
+    const opened = target.shape === "open" ? 4 : target.shape === "two" ? 2 : target.shape === "point" ? 1 : 0;
+    fingers.forEach(({ finger, tip }, index) => {
+      const curl = target.shape === "relaxed" ? 0.42 : index < opened ? 0.05 : 1.04;
+      const angle = blend(0.42, curl);
+      finger.rotation.x = approach(finger.rotation.x, -angle);
+      finger.rotation.z = approach(finger.rotation.z, side * (index - 1.5) * blend(0.035, opened === 4 ? 0.16 : 0.075));
+      tip.rotation.x = approach(tip.rotation.x, -angle * 0.78);
+    });
+    thumb.rotation.z = approach(thumb.rotation.z, -side * blend(0.44, opened === 4 ? 0.64 : 0.29));
+    thumb.rotation.x = approach(thumb.rotation.x, blend(-0.23, opened === 4 ? -0.05 : -0.65));
+    thumbTip.rotation.x = approach(thumbTip.rotation.x, blend(-0.31, opened === 4 ? -0.10 : -0.69));
+  }
 
   const pointer = { x: 0, y: 0 };
   const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)");
@@ -149,62 +262,74 @@ export function mountCoach(canvas: HTMLCanvasElement, motion: () => CoachMotion)
   let observedWave = -1;
   let waveAt = -1e5;
   let frame = 0;
-  let lastFrame = 0;
+  let renderedAt = 0;
   let contextAvailable = true;
 
   function render(now: number) {
     const state = motion();
     const seconds = (now - start) / 1000;
+    const still = reduceMotion.matches;
+    const delta = Math.min((now - renderedAt) / 1000, 0.16);
+    const damping = still || renderedAt === 0 ? 1 : 1 - Math.exp(-13 * delta);
+    renderedAt = now;
     if (state.wave !== observedWave) {
       observedWave = state.wave;
       waveAt = now;
     }
-    const still = reduceMotion.matches;
+
     const elapsed = (now - waveAt) / 1000;
-    const waving = state.wave > 0 && elapsed < 1.55;
-    const wave = waving ? Math.sin(Math.PI * Math.min(1, elapsed / 1.55)) : 0;
+    const wave = state.wave > 0 && !still
+      ? MathUtils.smoothstep(elapsed, 0, 0.24) * (1 - MathUtils.smoothstep(elapsed, 1.15, 1.65))
+      : 0;
     const speaking = state.pose === "speaking" && !still;
-    const thinking = state.pose === "thinking";
+    const listening = state.pose === "listening" && !still;
+    const thinking = state.pose === "thinking" && !still;
     const beat = state.speechBeat?.current;
     const emphasis = speaking && beat ? Math.max(0, 1 - (now - beat.at) / 350) * beat.openness : 0;
     const articulation = speaking
-      ? Math.min(1, Math.max(0, 0.48 + 0.48 * Math.sin(seconds * 16) + 0.34 * emphasis))
+      ? Math.min(1, Math.max(0, 0.40 + 0.40 * Math.sin(seconds * 18) + 0.35 * emphasis))
       : 0;
-    body.position.y = still ? 0 : 0.013 * Math.sin(seconds * 2.1) + 0.015 * emphasis;
-    body.rotation.y = still ? -0.065 : -0.065 + pointer.x * 0.08;
-    head.rotation.y = still ? 0 : pointer.x * 0.22 + 0.063 * Math.sin(seconds * 1.16);
-    head.rotation.x = still ? 0 : -pointer.y * 0.085 + (speaking ? 0.085 * emphasis : 0.025);
-    head.rotation.z = still ? 0 : thinking ? -0.135 : (waving ? -0.1 * wave : 0.018);
-    const blinkCycle = (seconds + 1.65) % 3.95;
-    const blink = still ? 1 : 1 - 0.94 * Math.exp(-((blinkCycle - 2.92) ** 2) / 0.004);
+
+    const beatAge = beat ? (now - beat.gestureAt) / 1000 : 0;
+    const gestureStrength = speaking && beat
+      ? MathUtils.smoothstep(beatAge, 0, 0.19) * (1 - MathUtils.smoothstep(beatAge, 0.92, 1.65))
+      : 0;
+    const [leftPose, rightPose] = beat ? explain[beat.gesture] ?? explain.explain : [rest, rest];
+    poseArm(left, leftPose, gestureStrength * (1 - wave * 0.7), damping);
+    poseArm(right, wave > 0.05 ? greeting : rightPose, Math.max(wave, gestureStrength), damping,
+      wave * Math.sin(elapsed * 17) * (1 - MathUtils.smoothstep(elapsed, 0.95, 1.3)));
+
+    body.position.y = still ? 0 : 0.010 * Math.sin(seconds * 2.1) + 0.017 * emphasis;
+    body.rotation.y = MathUtils.lerp(
+      body.rotation.y, -0.10 + (still ? 0 : pointer.x * 0.067 + 0.06 * gestureStrength), damping,
+    );
+    head.rotation.y = MathUtils.lerp(head.rotation.y, still ? 0 : pointer.x * 0.22 + 0.045 * Math.sin(seconds), damping);
+    head.rotation.x = MathUtils.lerp(
+      head.rotation.x, still ? 0 : -pointer.y * 0.08 + 0.086 * emphasis + (listening ? 0.13 : 0.025), damping,
+    );
+    head.rotation.z = MathUtils.lerp(
+      head.rotation.z, thinking ? -0.12 : listening ? 0.105 : wave > 0 ? -0.08 * wave : 0.018, damping,
+    );
+    const blinkCycle = (seconds + 1.7) % 4.2;
+    const blink = still ? 1 : 1 - 0.96 * Math.exp(-((blinkCycle - 2.96) ** 2) / 0.004);
     for (const { eye, pupil, brow } of eyes) {
       eye.scale.y = blink;
-      pupil.position.x = still ? 0 : pointer.x * 0.022;
-      pupil.position.y = still ? 0 : pointer.y * 0.014;
-      brow.position.y = (thinking && !still ? 0.146 : 0.128) + 0.012 * emphasis;
+      pupil.position.x = still ? 0 : pointer.x * 0.013;
+      pupil.position.y = still ? 0 : pointer.y * 0.008;
+      brow.position.y = (thinking || listening ? 0.115 : 0.102) + 0.012 * emphasis;
     }
     talking.visible = speaking;
-    teeth.visible = speaking && articulation > 0.22;
-    tongue.visible = speaking && articulation > 0.52;
+    teeth.visible = speaking && articulation > 0.32;
+    tongue.visible = speaking && articulation > 0.60;
     smile.visible = !speaking;
-    jaw.position.y = -0.15 - 0.026 * articulation;
-    talking.scale.x = beat?.rounded && emphasis > 0.16 ? 0.058 : 0.089 - 0.015 * articulation;
-    talking.scale.y = 0.012 + 0.049 * articulation;
-    left.shoulder.rotation.z = -0.23 - 0.14 * emphasis;
-    left.elbow.rotation.z = -0.12 - 0.24 * emphasis;
-    left.elbow.rotation.x = -0.44 - 0.18 * emphasis;
-    right.shoulder.rotation.z = still ? 0.21 : 0.22 + 1.56 * wave + 0.26 * emphasis;
-    right.elbow.rotation.z = still ? 0.16 : 0.2 + wave * (0.68 + 0.56 * Math.sin(elapsed * 19)) + 0.2 * emphasis;
-    right.elbow.rotation.x = -0.23 - (thinking && !still ? 0.44 : 0);
+    talking.scale.x = beat?.rounded && emphasis > 0.16 ? 0.045 : 0.075 - 0.012 * articulation;
+    talking.scale.y = 0.008 + 0.034 * articulation;
     renderer.render(scene, camera);
   }
 
   function draw(now: number) {
     frame = requestAnimationFrame(draw);
-    if (now - lastFrame >= 1000 / 30) {
-      render(now);
-      lastFrame = now;
-    }
+    if (now - renderedAt >= 1000 / 30) render(now);
   }
 
   function update() {
@@ -218,12 +343,12 @@ export function mountCoach(canvas: HTMLCanvasElement, motion: () => CoachMotion)
     const { clientWidth, clientHeight } = canvas;
     if (!clientWidth || !clientHeight) return;
     renderer.setSize(clientWidth, clientHeight, false);
-    const halfHeight = 1.12;
-    const halfWidth = halfHeight * clientWidth / clientHeight;
-    camera.left = -halfWidth;
-    camera.right = halfWidth;
+    const aspect = clientWidth / clientHeight;
+    const halfHeight = Math.max(1.10, 1.27 / aspect);
     camera.top = halfHeight;
     camera.bottom = -halfHeight;
+    camera.left = -halfHeight * aspect;
+    camera.right = halfHeight * aspect;
     camera.updateProjectionMatrix();
     if (contextAvailable && !document.hidden) render(performance.now());
   }

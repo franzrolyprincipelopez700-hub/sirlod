@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import {
-  FaArrowRight, FaCalendarAlt, FaHandPaper, FaPaperPlane, FaRegFilePdf,
-  FaRegTrashAlt, FaRunning, FaTimes, FaVolleyballBall, FaVolumeMute, FaVolumeUp,
+  FaArrowRight, FaCalendarAlt, FaHandPaper, FaMicrophone, FaPaperPlane, FaRegFilePdf,
+  FaRegTrashAlt, FaRunning, FaStop, FaTimes, FaVolleyballBall, FaVolumeMute, FaVolumeUp,
 } from "react-icons/fa";
 import { API_BASE_URL } from "~/lib/constants";
 import type { CoachMotion, CoachPose } from "./coach-scene";
 import { useCoachVoice } from "./useCoachVoice";
+import { useCoachDictation } from "./useCoachDictation";
 import "./losabot.css";
 
 type Topic = "general" | "horarios" | "reservas" | "documentos" | "permisos" | "losas" | "pausa" | "saludo" | "cortesia" | "privado";
@@ -98,6 +99,8 @@ export function ChatbotWidget({ isAdministrator = false, sessionId }: { isAdmini
   const [pending, setPending] = useState(false);
   const [wave, setWave] = useState(0);
   const voice = useCoachVoice();
+  const dictation = useCoachDictation();
+  const dictating = dictation.phase !== "idle";
   const visible = useRef(false);
   const greeted = useRef(false);
   const [greeting, setGreeting] = useState(false);
@@ -111,7 +114,8 @@ export function ChatbotWidget({ isAdministrator = false, sessionId }: { isAdmini
   const greetingTimer = useRef<number | undefined>(undefined);
   const conversationHistory = useRef<HistoryEntry[]>([]);
   const links = isAdministrator ? adminLinks : userLinks;
-  const pose: CoachPose = voice.speaking ? "speaking" : pending ? "thinking" : "idle";
+  const pose: CoachPose = dictation.phase === "listening" ? "listening"
+    : voice.speaking ? "speaking" : pending || dictating ? "thinking" : "idle";
 
   useEffect(() => {
     if (!storageKey) return;
@@ -150,6 +154,7 @@ export function ChatbotWidget({ isAdministrator = false, sessionId }: { isAdmini
     visible.current = false;
     setOpen(false);
     voice.stop();
+    dictation.cancel();
     window.requestAnimationFrame(() => launcher.current?.focus());
   }
 
@@ -169,6 +174,7 @@ export function ChatbotWidget({ isAdministrator = false, sessionId }: { isAdmini
     setMessages([welcome]);
     setPending(false);
     voice.stop();
+    dictation.cancel();
     input.current?.focus();
   }
 
@@ -178,7 +184,8 @@ export function ChatbotWidget({ isAdministrator = false, sessionId }: { isAdmini
 
   async function send(text: string) {
     const message = text.trim();
-    if (!message || request.current) return;
+    if (!message || request.current || dictating) return;
+    dictation.cancel();
     const controller = new AbortController();
     request.current = controller;
     setPending(true);
@@ -250,12 +257,6 @@ export function ChatbotWidget({ isAdministrator = false, sessionId }: { isAdmini
           <div className="losabot-hero">
             <div className="losabot-court" aria-hidden="true" />
             <div className="losabot-tools">
-              <button type="button" onClick={() => {
-                if (voice.toggle()) voice.play([...messages].reverse().find((item) => item.sender === "bot")?.text ?? welcome.text);
-              }} aria-label={voice.enabled ? "Silenciar voz" : "Activar voz"}
-                title={voice.enabled ? "Silenciar voz" : "Activar voz"} disabled={voice.status === "unavailable"}>
-                {voice.enabled && voice.status !== "unavailable" ? <FaVolumeUp aria-hidden="true" /> : <FaVolumeMute aria-hidden="true" />}
-              </button>
               <button type="button" onClick={reset} aria-label="Borrar conversación" title="Borrar conversación">
                 <FaRegTrashAlt aria-hidden="true" />
               </button>
@@ -266,13 +267,21 @@ export function ChatbotWidget({ isAdministrator = false, sessionId }: { isAdmini
             <div className="losabot-intro">
               <h2 id="losabot-title">LosaBot</h2>
               <p>Tu entrenador de cancha</p>
-              <button type="button" onClick={() => greet()} className="losabot-wave">
-                <FaHandPaper aria-hidden="true" /> Saludar
-              </button>
+              <div className="losabot-coach-actions">
+                <button type="button" onClick={() => greet()} className="losabot-wave" disabled={dictating}>
+                  <FaHandPaper aria-hidden="true" /> Saludar
+                </button>
+                <button type="button" onClick={() => voice.toggle()} className="losabot-wave losabot-voice-toggle"
+                  data-muted={!voice.enabled} aria-label={voice.enabled ? "Silenciar voz" : "Activar voz"}
+                  disabled={voice.status === "unavailable"}>
+                  {voice.enabled ? <FaVolumeUp aria-hidden="true" /> : <FaVolumeMute aria-hidden="true" />}
+                  {voice.enabled ? "Silenciar" : "Activar voz"}
+                </button>
+                {voice.speaking && <span className="losabot-speaking" role="status" aria-label="LosaBot está hablando">
+                  <i /><i /><i />
+                </span>}
+              </div>
               <span className="sr-only" role="status">{greeting ? "LosaBot te devuelve el saludo." : ""}</span>
-              {voice.speaking && <span className="losabot-speaking" role="status" aria-label="LosaBot está hablando">
-                <i /><i /><i />
-              </span>}
             </div>
             <CoachAvatar pose={pose} wave={wave} speechBeat={voice.speechBeat} />
           </div>
@@ -295,18 +304,34 @@ export function ChatbotWidget({ isAdministrator = false, sessionId }: { isAdmini
 
           <div className="losabot-shortcuts" aria-label="Consultas rápidas">
             {shortcuts.map(({ label, text, icon: Icon }) => (
-              <button key={label} type="button" onClick={() => void send(text)} disabled={pending}>
+              <button key={label} type="button" onClick={() => void send(text)} disabled={pending || dictating}>
                 <Icon aria-hidden="true" /> {label}
               </button>
             ))}
           </div>
           <div className="losabot-composer">
-            {voice.status === "unavailable" && <p className="losabot-voice-note">La voz local en español no está disponible en este dispositivo.</p>}
+            <p className="losabot-voice-note" role="status">
+              {dictation.notice || (voice.status === "unavailable" ? "Voz local de lectura no disponible." : "")}
+            </p>
             <form onSubmit={(event) => { event.preventDefault(); void send(draft); }}>
-              <input id="losabot-input" ref={input} value={draft} maxLength={500}
+              <button type="button" className="losabot-mic" aria-controls="losabot-input"
+                data-phase={dictation.phase}
+                aria-label={dictating ? "Detener dictado" : "Dictar con micrófono"}
+                title={dictating ? "Detener dictado" : "Dictar con micrófono"}
+                disabled={pending} onClick={() => {
+                  if (dictating) dictation.finish();
+                  else {
+                    voice.stop();
+                    void dictation.start(draft, setDraft);
+                  }
+                }}>
+                {dictating ? <FaStop aria-hidden="true" /> : <FaMicrophone aria-hidden="true" />}
+              </button>
+              <input id="losabot-input" ref={input} value={draft} maxLength={500} readOnly={dictating}
                 onChange={(event) => setDraft(event.target.value)} aria-label="Mensaje para LosaBot"
-                placeholder="Escribe una consulta…" />
-              <button type="submit" id="losabot-send-btn" aria-label="Enviar mensaje" disabled={!draft.trim() || pending}>
+                placeholder={dictation.phase === "listening" ? "Habla ahora…" : "Escribe una consulta…"} />
+              <button type="submit" id="losabot-send-btn" aria-label="Enviar mensaje"
+                disabled={!draft.trim() || pending || dictating}>
                 <FaPaperPlane aria-hidden="true" />
               </button>
             </form>
