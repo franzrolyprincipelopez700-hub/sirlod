@@ -42,11 +42,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
       </head>
       <body className="bg-[var(--bg-body)] text-[var(--text-primary)] antialiased font-sans">
         {children}
-        {import.meta.env.VITE_SIRLOD_PRACTICE === "1" && (
-          <aside className="pointer-events-none fixed bottom-3 left-3 z-50 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-900 shadow-sm">
-            Entorno de práctica
-          </aside>
-        )}
         <ScrollRestoration />
         <Scripts />
       </body>
