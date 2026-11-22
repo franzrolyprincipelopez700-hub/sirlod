@@ -137,6 +137,7 @@ AI_PROVIDER=deepseek
 DOCUMENT_AI_PROVIDER=gemini
 
 DEEPSEEK_API_KEY=TU_CLAVE_DEEPSEEK
+REPORT_DEEPSEEK_API_KEY=
 DEEPSEEK_MODEL=deepseek-flash
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 
@@ -146,8 +147,12 @@ GEMINI_MODEL=gemini-3.8-flash
 S3_REPORT_KEY_PREFIX=reportes
 ```
 
-`AI_PROVIDER` selecciona la IA de LosaBot: admite `deepseek` o `gemini`. La revisión de PDFs usa
-siempre `DOCUMENT_AI_PROVIDER=gemini`, porque necesita analizar visualmente el documento y la firma.
+`AI_PROVIDER` selecciona la IA de LosaBot. La revisión de PDFs usa el proveedor configurado
+en `DOCUMENT_AI_PROVIDER` (`openai` o `gemini`). Con Gemini usa `GEMINI_API_KEY` y `GEMINI_MODEL`.
+
+En práctica, `REPORT_DEEPSEEK_API_KEY` habilita DeepSeek exclusivamente para los reportes.
+El entorno institucional puede usar `DEEPSEEK_API_KEY` si `AI_PROVIDER=deepseek`.
+El motor local genera el análisis si la clave de reportes falta o la API falla.
 
 No subas `.env` a Git. El repositorio solo debe contener `.env.example` sin secretos.
 

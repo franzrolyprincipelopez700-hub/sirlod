@@ -305,7 +305,7 @@ def build_report_pdf(report: dict[str, Any]) -> bytes:
     lima_tz = timezone(timedelta(hours=-5))
     generated_at = datetime.now(lima_tz).strftime("%d/%m/%Y %H:%M")
     source_key = report.get("analisis_fuente", "local")
-    source_name = "DeepSeek AI (v3/Flash)" if source_key == "deepseek" else "Motor Heurístico Local"
+    source_name = "DeepSeek AI" if source_key == "deepseek" else "Motor Heurístico Local"
 
     story: list[Any] = []
 

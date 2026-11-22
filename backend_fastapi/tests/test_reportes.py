@@ -75,7 +75,16 @@ def test_annual_practice_report_without_bookings() -> None:
 
 
 @pytest.mark.asyncio
-async def test_report_analysis_uses_deepseek(monkeypatch) -> None:
+@pytest.mark.parametrize(
+    ("schema", "report_key", "expected_key"),
+    [
+        ("public", "", "shared-test-key"),
+        ("sirlod_practica", "report-test-key", "report-test-key"),
+    ],
+)
+async def test_report_analysis_uses_deepseek(
+    monkeypatch: pytest.MonkeyPatch, schema: str, report_key: str, expected_key: str
+) -> None:
     captured: dict[str, Any] = {}
 
     class FakeResponse:
@@ -110,10 +119,13 @@ async def test_report_analysis_uses_deepseek(monkeypatch) -> None:
         async def post(self, url: str, **kwargs: object) -> FakeResponse:
             captured["url"] = url
             captured["json"] = kwargs["json"]
+            captured["headers"] = kwargs["headers"]
             return FakeResponse()
 
+    monkeypatch.setattr(settings, "postgres_schema", schema)
     monkeypatch.setattr(settings, "ai_provider", "deepseek")
-    monkeypatch.setattr(settings, "deepseek_api_key", "test-key")
+    monkeypatch.setattr(settings, "deepseek_api_key", "shared-test-key")
+    monkeypatch.setattr(settings, "report_deepseek_api_key", report_key)
     monkeypatch.setattr(ai.httpx, "AsyncClient", FakeClient)
     report = {
         "periodo": "mensual",
@@ -135,6 +147,23 @@ async def test_report_analysis_uses_deepseek(monkeypatch) -> None:
     assert analysis.resumen_ejecutivo == "Resumen IA"
     assert captured["url"] == "https://api.deepseek.com/chat/completions"
     assert captured["json"]["response_format"] == {"type": "json_object"}
+    assert captured["headers"]["Authorization"] == f"Bearer {expected_key}"
+
+
+@pytest.mark.asyncio
+async def test_practice_reports_cannot_use_chatbot_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "postgres_schema", "sirlod_practica")
+    monkeypatch.setattr(settings, "ai_provider", "deepseek")
+    monkeypatch.setattr(settings, "deepseek_api_key", "shared-test-key")
+    monkeypatch.setattr(settings, "report_deepseek_api_key", "")
+    client = MagicMock()
+    monkeypatch.setattr(ai.httpx, "AsyncClient", client)
+
+    analysis, source = await generate_report_analysis({"total_permisos": 0})
+
+    assert source == "local"
+    assert analysis.calificacion_eficiencia == "Sin actividad confirmada"
+    client.assert_not_called()
 
 
 @pytest.mark.asyncio

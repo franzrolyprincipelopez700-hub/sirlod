@@ -122,7 +122,10 @@ def local_analysis(report: dict[str, Any]) -> ReportAnalysis:
 async def generate_report_analysis(report: dict[str, Any]) -> tuple[ReportAnalysis, str]:
     """Solicita a DeepSeek un análisis estratégico exhaustivo de nivel directivo."""
     fallback = local_analysis(report)
-    if settings.is_practice or settings.ai_provider != "deepseek" or not settings.deepseek_api_key:
+    api_key = settings.report_deepseek_api_key
+    if not api_key and not settings.is_practice and settings.ai_provider == "deepseek":
+        api_key = settings.deepseek_api_key
+    if not api_key:
         return fallback, "local"
 
     aggregate_data = {
@@ -178,7 +181,7 @@ async def generate_report_analysis(report: dict[str, Any]) -> tuple[ReportAnalys
                     "max_tokens": 3000,
                     "response_format": {"type": "json_object"},
                 },
-                headers={"Authorization": f"Bearer {settings.deepseek_api_key}"},
+                headers={"Authorization": f"Bearer {api_key}"},
             )
             response.raise_for_status()
             body = response.json()
