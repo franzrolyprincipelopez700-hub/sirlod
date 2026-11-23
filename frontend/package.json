@@ -9,6 +9,7 @@
     "typecheck": "react-router typegen && tsc"
   },
   "dependencies": {
+    "@huggingface/transformers": "3.8.1",
     "@react-router/node": "8.0.0",
     "@react-router/serve": "8.0.0",
     "axios": "^1.20.0",

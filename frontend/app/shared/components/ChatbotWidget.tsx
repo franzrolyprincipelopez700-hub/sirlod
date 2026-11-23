@@ -101,6 +101,8 @@ export function ChatbotWidget({ isAdministrator = false, sessionId }: { isAdmini
   const voice = useCoachVoice();
   const dictation = useCoachDictation();
   const dictating = dictation.phase !== "idle";
+  const microphoneLabel = dictation.phase === "listening" ? "Detener y transcribir"
+    : dictating ? "Cancelar dictado" : "Dictar con micrófono";
   const visible = useRef(false);
   const greeted = useRef(false);
   const [greeting, setGreeting] = useState(false);
@@ -316,8 +318,8 @@ export function ChatbotWidget({ isAdministrator = false, sessionId }: { isAdmini
             <form onSubmit={(event) => { event.preventDefault(); void send(draft); }}>
               <button type="button" className="losabot-mic" aria-controls="losabot-input"
                 data-phase={dictation.phase}
-                aria-label={dictating ? "Detener dictado" : "Dictar con micrófono"}
-                title={dictating ? "Detener dictado" : "Dictar con micrófono"}
+                aria-label={microphoneLabel}
+                title={microphoneLabel}
                 disabled={pending} onClick={() => {
                   if (dictating) dictation.finish();
                   else {

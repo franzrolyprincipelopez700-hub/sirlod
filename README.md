@@ -151,8 +151,9 @@ LosaBot responde las preguntas frecuentes con reglas locales y los datos de SIRL
 elaborar la respuesta, el chat autenticado usa automáticamente el proveedor de `AI_PROVIDER` con
 horarios y disponibilidad consultados en PostgreSQL. Los estados personales se consultan por separado.
 El entrenador usa Three.js y una voz local en español. Se puede silenciar desde el panel.
-El micrófono transcribe en el dispositivo cuando el navegador admite el dictado local. La primera vez
-puede descargar el paquete de español. El usuario revisa el texto antes de enviarlo.
+El micrófono graba con MediaRecorder y procesa el audio con Whisper Tiny en español mediante un
+worker del navegador. La primera transcripción descarga el modelo y el motor WebAssembly.
+El audio se queda en el dispositivo y el usuario revisa el texto antes de enviarlo.
 La revisión de PDFs usa el proveedor configurado
 en `DOCUMENT_AI_PROVIDER` (`openai` o `gemini`). Con Gemini usa `GEMINI_API_KEY` y `GEMINI_MODEL`.
 

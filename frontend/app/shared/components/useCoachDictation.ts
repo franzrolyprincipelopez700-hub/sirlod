@@ -1,183 +1,211 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { DictationResult } from "./coach-dictation.worker";
 
 type DictationPhase = "idle" | "preparing" | "listening" | "finishing";
-type LanguageStatus = "available" | "downloadable" | "downloading" | "unavailable";
-type LanguageOptions = { langs: string[]; processLocally: true };
 
-interface DictationResult {
-  isFinal: boolean;
-  0?: { transcript: string };
+interface Recording {
+  stream?: MediaStream;
+  recorder?: MediaRecorder;
+  timer?: number;
 }
 
-interface LocalRecognition {
-  lang: string;
-  processLocally: boolean;
-  continuous: boolean;
-  interimResults: boolean;
-  onstart: (() => void) | null;
-  onresult: ((event: { results: ArrayLike<DictationResult> }) => void) | null;
-  onerror: ((event: { error: string }) => void) | null;
-  onend: (() => void) | null;
-  start(): void;
-  stop(): void;
-  abort(): void;
+const modelError = "No se pudo cargar o ejecutar el dictado local. Intenta nuevamente.";
+const noVoice = "No se obtuvo texto. Prueba hablando más cerca del micrófono.";
+
+function stopTracks(recording: Recording) {
+  recording.stream?.getTracks().forEach((track) => track.stop());
 }
 
-interface LocalRecognitionConstructor {
-  new (): LocalRecognition;
-  available(options: LanguageOptions): Promise<LanguageStatus>;
-  install(options: LanguageOptions): Promise<boolean>;
-}
-
-const spanishLocales = ["es-PE", "es-MX", "es-ES", "es-US"];
-const preparationMessage = "Preparando el dictado local… La primera vez puede descargar el español.";
-const errors: Record<string, string> = {
-  "not-allowed": "El navegador necesita permiso para usar el micrófono.",
-  "service-not-allowed": "El navegador no permite usar el dictado local.",
-  "audio-capture": "No se encontró un micrófono disponible.",
-  "no-speech": "No se detectó voz. Intenta dictar de nuevo.",
-  "language-not-supported": "El español local no está disponible en este navegador.",
-};
-
-function localRecognition(): LocalRecognitionConstructor | undefined {
-  const browser = window as Window & {
-    SpeechRecognition?: LocalRecognitionConstructor;
-    webkitSpeechRecognition?: LocalRecognitionConstructor;
-  };
-  const engine = browser.SpeechRecognition ?? browser.webkitSpeechRecognition;
-  if (engine && "processLocally" in engine.prototype &&
-    typeof engine.available === "function" && typeof engine.install === "function") return engine;
-}
-
-async function getLocalLanguage(engine: LocalRecognitionConstructor): Promise<string | undefined> {
-  const options = (lang: string): LanguageOptions => ({ langs: [lang], processLocally: true });
-  const checks = await Promise.all(spanishLocales.map(async (lang) => {
-    try {
-      return { lang, status: await engine.available(options(lang)) };
-    } catch {
-      return { lang, status: "unavailable" as const };
+async function decodeAudio(clip: Blob) {
+  // decodeAudioData also resamples the recording to Whisper's 16 kHz input.
+  const context = new OfflineAudioContext(1, 1, 16_000);
+  const decoded = await context.decodeAudioData(await clip.arrayBuffer());
+  const audio = new Float32Array(decoded.length);
+  for (let channel = 0; channel < decoded.numberOfChannels; channel++) {
+    const samples = decoded.getChannelData(channel);
+    for (let i = 0; i < samples.length; i++) {
+      audio[i] += samples[i] / decoded.numberOfChannels;
     }
-  }));
-  const installed = checks.find(({ status }) => status === "available");
-  if (installed) return installed.lang;
+  }
+  return audio;
+}
 
-  const candidate = checks.find(({ status }) => status === "downloading" || status === "downloadable");
-  if (!candidate) return;
-  if (await engine.install(options(candidate.lang))) return candidate.lang;
+function hasSpeechInput(samples: Float32Array): boolean {
+  if (samples.length < 4800) return false;
+  // Whisper can produce words on silence. Check that at least one window has a signal first.
+  const windowSize = 3200;
+  for (let start = 0; start + windowSize <= samples.length; start += windowSize) {
+    let energy = 0;
+    for (let i = start; i < start + windowSize; i++) energy += samples[i] ** 2;
+    if (energy / windowSize >= 0.000008) return true;
+  }
+  return false;
+}
+
+function accessError(error: unknown) {
+  const name = error instanceof Error ? error.name : "";
+  switch (name) {
+    case "NotAllowedError":
+    case "SecurityError":
+      return "Permite el micrófono para SIRLOD en el navegador y vuelve a intentarlo.";
+    case "NotFoundError":
+    case "DevicesNotFoundError":
+      return "Conecta o activa un micrófono y vuelve a intentarlo.";
+    case "NotReadableError":
+    case "TrackStartError":
+      return "No se pudo acceder al micrófono. Revisa si otra aplicación lo está usando.";
+    default:
+      return "No se pudo iniciar la grabación. Revisa el micrófono o escribe la consulta.";
+  }
 }
 
 export function useCoachDictation() {
   const [phase, setPhase] = useState<DictationPhase>("idle");
   const [notice, setNotice] = useState("");
-  const recognizer = useRef<LocalRecognition | null>(null);
-  const preparing = useRef(false);
-  const run = useRef(0);
-  const listeningTimer = useRef<number | undefined>(undefined);
+  const active = useRef<Recording | null>(null);
+  const worker = useRef<Worker | null>(null);
 
   const cancel = useCallback(() => {
-    run.current++;
-    preparing.current = false;
-    window.clearTimeout(listeningTimer.current);
-    const active = recognizer.current;
-    recognizer.current = null;
-    active?.abort();
+    const request = active.current;
+    active.current = null;
+    if (request) {
+      window.clearTimeout(request.timer);
+      if (request.recorder?.state === "recording") request.recorder.stop();
+      stopTracks(request);
+      worker.current?.terminate();
+      worker.current = null;
+    }
     setPhase("idle");
     setNotice("");
   }, []);
 
-  useEffect(() => () => cancel(), [cancel]);
+  useEffect(() => () => {
+    cancel();
+    worker.current?.terminate();
+    worker.current = null;
+  }, [cancel]);
 
   function finish() {
-    if (!recognizer.current || phase !== "listening") {
+    if (active.current?.recorder?.state === "recording") {
+      active.current.recorder.stop();
+      setPhase("finishing");
+      setNotice("Preparando la transcripción…");
+    } else {
       cancel();
-      return;
     }
-    window.clearTimeout(listeningTimer.current);
-    setPhase("finishing");
-    setNotice("Terminando el dictado…");
-    recognizer.current.stop();
   }
 
   async function start(prefix: string, write: (text: string) => void) {
-    if (preparing.current || recognizer.current) return;
-    const engine = localRecognition();
-    if (!engine) {
-      setNotice("Este navegador no admite dictado local en español. Puedes seguir escribiendo.");
+    if (active.current) return;
+    if (!navigator.mediaDevices?.getUserMedia ||
+      typeof MediaRecorder !== "function" || typeof OfflineAudioContext !== "function" || typeof Worker !== "function") {
+      setNotice("Este navegador no permite grabar y transcribir localmente. Puedes escribir tu consulta.");
       return;
     }
 
-    const attempt = ++run.current;
-    preparing.current = true;
+    const request: Recording = {};
+    active.current = request;
     setPhase("preparing");
-    setNotice(preparationMessage);
-    let language: string | undefined;
-    try {
-      language = await getLocalLanguage(engine);
-    } catch {
-      // Algunos dispositivos impiden la descarga del paquete de idioma.
-    }
-    if (attempt !== run.current) return;
-    if (!language) {
-      preparing.current = false;
+    setNotice("Activando el micrófono…");
+
+    function settle(message: string) {
+      if (active.current !== request) return;
+      active.current = null;
+      window.clearTimeout(request.timer);
+      stopTracks(request);
       setPhase("idle");
-      setNotice("No se pudo preparar el español para el dictado local.");
-      return;
+      setNotice(message);
     }
 
-    const active = new engine();
-    recognizer.current = active;
-    preparing.current = false;
-    active.processLocally = true;
-    active.lang = language;
-    active.continuous = false;
-    active.interimResults = true;
-    let heardFinal = false;
-    const original = prefix.trimEnd();
-    const writeTranscript = (transcript: string) => {
-      const text = [original, transcript].filter(Boolean).join(" ");
-      write(text.slice(0, 500));
-    };
-    active.onstart = () => {
-      if (recognizer.current !== active) return;
-      setPhase("listening");
-      setNotice("Escuchando…");
-      listeningTimer.current = window.setTimeout(() => {
-        if (recognizer.current !== active) return;
-        setPhase("finishing");
-        setNotice("Terminando el dictado…");
-        active.stop();
-      }, 25_000);
-    };
-    active.onresult = (event) => {
-      if (recognizer.current !== active) return;
-      const results = Array.from(event.results);
-      const final = results.filter((result) => result.isFinal);
-      heardFinal = final.some((result) => !!result[0]?.transcript.trim());
-      const transcript = results.map((result) => result[0]?.transcript.trim() ?? "").filter(Boolean).join(" ");
-      writeTranscript(transcript);
-    };
-    active.onerror = ({ error }) => {
-      if (recognizer.current !== active) return;
-      recognizer.current = null;
-      window.clearTimeout(listeningTimer.current);
-      if (!heardFinal) write(original);
-      setPhase("idle");
-      setNotice(errors[error] ?? "No se pudo completar el dictado local. Puedes escribir tu consulta.");
-    };
-    active.onend = () => {
-      if (recognizer.current !== active) return;
-      recognizer.current = null;
-      window.clearTimeout(listeningTimer.current);
-      setPhase("idle");
-      if (!heardFinal) write(original);
-      setNotice(heardFinal ? "Revisa el texto y pulsa Enviar cuando esté listo." : "No se detectó voz. Intenta de nuevo.");
-    };
+    function failModel() {
+      if (active.current !== request) return;
+      worker.current?.terminate();
+      worker.current = null;
+      settle(modelError);
+    }
+
+    async function transcribe(clip: Blob) {
+      let samples: Float32Array<ArrayBuffer>;
+      try {
+        if (!clip.size) {
+          settle(noVoice);
+          return;
+        }
+        samples = await decodeAudio(clip);
+      } catch {
+        settle("No se pudo leer la grabación. Vuelve a intentarlo.");
+        return;
+      }
+      if (active.current !== request) return;
+      if (!hasSpeechInput(samples)) {
+        settle(noVoice);
+        return;
+      }
+
+      try {
+        const engine = worker.current ??= new Worker(
+          new URL("./coach-dictation.worker.ts", import.meta.url),
+          { type: "module" },
+        );
+        engine.onmessage = ({ data }: MessageEvent<DictationResult>) => {
+          if (active.current !== request) return;
+          switch (data.type) {
+            case "loading":
+              setNotice("Descargando el modelo de español para el dictado local…");
+              break;
+            case "transcribing":
+              setNotice("Transcribiendo en este dispositivo…");
+              break;
+            case "result":
+              if (data.text) {
+                write([prefix.trimEnd(), data.text].filter(Boolean).join(" ").slice(0, 500));
+                settle("Revisa el texto y pulsa Enviar cuando esté listo.");
+              } else {
+                settle(noVoice);
+              }
+              break;
+            case "error":
+              failModel();
+          }
+        };
+        engine.onerror = failModel;
+        request.timer = window.setTimeout(failModel, 110_000);
+        engine.postMessage(samples, [samples.buffer]);
+      } catch {
+        failModel();
+      }
+    }
+
     try {
-      if (active.processLocally !== true) throw new Error("El navegador no activó el dictado local");
-      active.start();
-    } catch {
-      cancel();
-      setNotice("No se pudo iniciar el micrófono para el dictado local.");
+      request.stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1 }, video: false });
+      if (active.current !== request) {
+        stopTracks(request);
+        return;
+      }
+
+      const recorder = new MediaRecorder(request.stream);
+      request.recorder = recorder;
+      const chunks: Blob[] = [];
+      recorder.ondataavailable = ({ data }) => {
+        if (data.size) chunks.push(data);
+      };
+      recorder.onerror = () => settle("El micrófono se desconectó. Intenta grabar de nuevo.");
+      recorder.onstop = () => {
+        window.clearTimeout(request.timer);
+        stopTracks(request);
+        if (active.current !== request) return;
+        setPhase("finishing");
+        setNotice("Preparando la transcripción…");
+        void transcribe(new Blob(chunks, { type: recorder.mimeType || chunks[0]?.type }));
+      };
+      recorder.start();
+      request.timer = window.setTimeout(() => {
+        if (active.current === request && recorder.state === "recording") recorder.stop();
+      }, 25_000);
+      setPhase("listening");
+      setNotice("Grabando… pulsa el micrófono otra vez para transcribir.");
+    } catch (error) {
+      settle(accessError(error));
     }
   }
 
