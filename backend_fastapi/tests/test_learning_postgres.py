@@ -170,6 +170,40 @@ async def register(client, date_id, value="inasistencia"):
     )
 
 
+async def test_dashboard_counts_observed_activity_and_previews_without_writes(pg):
+    factory, client = pg
+    today = campus_now().date()
+    yesterday = today - timedelta(days=1)
+    tomorrow = today + timedelta(days=1)
+    completed = await permit(factory, yesterday, time(8), time(9))
+    await permit(factory, yesterday, time(10), time(11))
+    await permit(factory, yesterday, time(14), time(15), "Cancelado")
+    await permit(factory, tomorrow, time(8), time(9))
+    await register(client, completed)
+
+    assert (await client.get(PREFIX + "/panel/demanda")).status_code == 401
+    assert (await client.get(PREFIX + "/panel/anomalias", headers=STUDENT)).status_code == 403
+    demand = await ok(client, "GET", f"/panel/demanda?fecha={tomorrow}")
+    assert demand["por_hora"] == [{"clave": "08:00", "valor": 1}, {"clave": "10:00", "valor": 1}]
+    assert demand["por_losa"] == [{"clave": "Losa uno", "valor": 2}]
+    assert all(
+        not slot["disponible"] for slot in demand["consulta"]["turnos"] if slot["hora_inicio"] == "08:00:00"
+    )
+    async with factory() as db:
+        assert await db.scalar(select(func.count()).select_from(Prediction)) == 0
+
+    risk = await ok(client, "GET", "/panel/inasistencia")
+    assert {row["clave"]: row["valor"] for row in risk["por_resultado"]} == {
+        "inasistencia": 1,
+        "sin_verificar": 1,
+        "pendiente": 1,
+        "cancelado": 1,
+    }
+    anomalies = await ok(client, "GET", "/panel/anomalias")
+    requests = {row["clave"]: row["valor"] for row in anomalies["por_solicitud"]}
+    assert requests == {"Aceptado": 3, "Cancelado": 1}
+
+
 async def new_case(client, attendance_id=None):
     return await ok(
         client,

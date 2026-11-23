@@ -147,3 +147,24 @@ export interface Demo {
 
 export type WorkspaceView = "practica" | "operacion";
 
+
+
+export interface Indicator {
+  clave: string;
+  valor: number;
+}
+
+export interface DashboardSummary {
+  origen: "demostracion" | "institucional";
+  inicio: string;
+  fin: string;
+  fecha_consulta?: string;
+  error_consulta?: string;
+  consulta?: Demand;
+  por_hora?: Indicator[];
+  por_losa?: Indicator[];
+  por_solicitud?: Indicator[];
+  casos?: { tipo: string; estado: string; cantidad: number }[];
+  intentos?: number;
+  por_resultado?: Indicator[];
+}

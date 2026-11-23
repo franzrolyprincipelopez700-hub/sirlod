@@ -1,14 +1,69 @@
 import { Form, Link, useLoaderData } from "react-router";
 import { Button, Input, Select } from "~/shared/components/ui";
-import { AnomalyPractice } from "./practice";
-import { card, JsonDetails, label, localDate, Operation, Reason } from "./shared";
-import type { Case, History, Policy } from "./types";
-import { ModelDetails, Workspace, WorkspaceError } from "./workspace";
+import { Empty, HorizontalBars, integer, Panel, Ring, total } from "./charts";
+import { AnomalyPractice, Tag } from "./practice";
+import { card, label, localDate, Operation, Reason } from "./shared";
+import type { Case, DashboardSummary, History, Policy } from "./types";
+import { ModelDetails, Stat, Workspace, WorkspaceError } from "./workspace";
 
 export { action, loader } from "./panel.server";
 import type { loader } from "./panel.server";
 
 const severities = [{ value: "ordinaria", label: "Ordinaria" }, { value: "grave", label: "Grave" }];
+
+const evidenceNames: Record<string, string> = {
+  registro: "Registro verificable", referencia: "Referencia documentada",
+  puntuacion: "Puntuación de rareza", umbral: "Umbral del modelo",
+  periodo_fin_exclusivo: "Cierre de la semana analizada",
+  solicitudes: "Solicitudes", cancelaciones: "Cancelaciones", intentos: "Intentos",
+  intentos_rechazados: "Intentos rechazados", repeticiones_franja: "Repeticiones de franja",
+  solicitudes_media_previa: "Promedio previo de solicitudes", norma_id: "Regla registrada",
+  horas: "Horas", verificacion: "Verificación",
+};
+
+function Evidence({ value }: { value: Record<string, unknown> }) {
+  const features = value.variables;
+  const fields = Object.entries({
+    ...value, ...(features && typeof features === "object" && !Array.isArray(features) ? features : {}),
+  }).flatMap(([key, item]) => {
+    if (typeof item === "number") return [{ key, text: item.toLocaleString("es-PE", { maximumFractionDigits: 3 }) }];
+    if (typeof item !== "string" || !item.trim()) return [];
+    return [{ key, text: key === "periodo_fin_exclusivo" && Number.isFinite(Date.parse(item)) ? localDate(item) : item }];
+  });
+  return fields.length ? <dl className="ml-evidence grid gap-3 sm:grid-cols-2">
+    {fields.map(({ key, text }) => <div key={key} className={text.length > 50 ? "sm:col-span-2" : ""}>
+      <dt>{evidenceNames[key] ?? key.replaceAll("_", " ")}</dt><dd>{text}</dd>
+    </div>)}
+  </dl> : null;
+}
+
+function Overview({ data, policies }: { data: DashboardSummary; policies: Policy[] }) {
+  const all = data.casos ?? [];
+  const statuses = ["pendiente", "confirmado", "descartado", "derivado", "anulado"].map((state) => ({
+    label: label(state), value: all.filter((item) => item.estado === state).reduce((sum, item) => sum + item.cantidad, 0),
+  }));
+  const requests = data.por_solicitud ?? [];
+  const alerts = all.filter((item) => item.tipo === "anomalia").reduce((sum, item) => sum + item.cantidad, 0);
+  return <>
+    <dl className="grid gap-3 sm:grid-cols-3">
+      <Stat label="En revisión" value={integer.format(statuses[0].value)} detail="Alertas o incidentes pendientes" />
+      <Stat label="Alertas del modelo" value={integer.format(alerts)} detail="Alertas estadísticas registradas" />
+      <Stat label="Reglas vigentes" value={policies.filter((item) => item.vigente).length} detail="Requeridas para aplicar medidas" />
+    </dl>
+    <div className="grid gap-4 xl:grid-cols-2">
+      <Panel title="Actividad observada" subtitle="Solicitudes e intentos registrados en los últimos 28 días">
+        <HorizontalBars label="Actividad del periodo" data={[
+          { label: "Solicitudes", value: total(requests) },
+          { label: "Cancelaciones", value: requests.find((row) => row.clave === "Cancelado")?.valor ?? 0 },
+          { label: "Intentos registrados", value: data.intentos ?? 0 },
+        ]} />
+      </Panel>
+      <Panel title="Estado de los expedientes" subtitle="Alertas estadísticas e incidentes documentados">
+        <Ring data={statuses} label="registros" />
+      </Panel>
+    </div>
+  </>;
+}
 
 function CaseCard({ incident, policies }: { incident: Case; policies: Policy[] }) {
   const eligible = policies.filter((p) => p.vigente && p.tipo === incident.tipo &&
@@ -21,21 +76,29 @@ function CaseCard({ incident, policies }: { incident: Case; policies: Policy[] }
         { value: "descartar", label: "Descartar" },
       ];
   return <article className={`${card} space-y-3`}>
-    <h3 className="font-semibold">#{incident.id} · {label(incident.tipo)} · {label(incident.estado)}</h3>
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <h3 className="font-bold text-slate-900">{label(incident.tipo)} · #{incident.id}</h3>
+      <Tag color={incident.estado === "pendiente" ? "amber" : incident.estado === "confirmado" ? "blue" : "neutral"}>
+        {label(incident.estado)}
+      </Tag>
+    </div>
     <p className="text-sm">
       {localDate(incident.ocurrido)} · <Link className="underline" to={`?usuario=${incident.usuario_id}#expediente`}>
         {incident.codigo ?? `Usuario #${incident.usuario_id}`}
       </Link>{incident.gravedad && ` · Gravedad ${label(incident.gravedad)}`}
     </p>
-    <JsonDetails label="Evidencias" value={incident.evidencia} />
+    <Evidence value={incident.evidencia} />
     {incident.tipo === "anomalia" && incident.estado === "pendiente" && <Link className="text-sm underline"
-      to={`?usuario=${incident.usuario_id}&alerta=${incident.id}#incidentes`}>Registrar hecho verificable asociado</Link>}
+      to={`?usuario=${incident.usuario_id}&alerta=${incident.id}#incidentes`}>Registrar incidente asociado con evidencia</Link>}
     {["pendiente", "confirmado"].includes(incident.estado) && <details className="space-y-2">
-      <summary className="cursor-pointer text-sm font-medium">Revisar incidente</summary>
-      <Operation intent="incidente-revision" id={incident.id} label="Guardar revisión"
+      <summary className="cursor-pointer rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm font-semibold">
+        {incident.estado === "confirmado" ? "Corregir o anular decisión" : incident.tipo === "anomalia" ? "Revisar o descartar alerta" : "Confirmar o descartar incidente"}
+      </summary>
+      <Operation intent="incidente-revision" id={incident.id} label="Registrar decisión"
         confirm="¿Registrar esta decisión en el historial?">
         <Select name="decision" label="Decisión" options={reviewOptions} />
-        <Select name="gravedad" label="Gravedad al confirmar" options={severities} />
+        {incident.tipo !== "anomalia" && incident.estado === "pendiente" &&
+          <Select name="gravedad" label="Gravedad al confirmar" options={severities} />}
         <Reason />
         <Reason name="evidencia" label="Verificación documentada" />
       </Operation>
@@ -89,12 +152,26 @@ function Dossier({ user, history }: { user: number; history: History }) {
             </Operation>}
         </div>)}
     </article>)}
-    <JsonDetails label="Auditoría autorizada de decisiones y correcciones" value={{
-      decisiones: history.decisiones,
-      medidasAnuladas: audit,
-      incidentesAnulados: history.incidentes.filter((incident) => incident.estado === "anulado"),
-      descargosDeMedidasAnuladas: history.descargos.filter((appeal) => audit.some((m) => m.id === appeal.medida_id)),
-    }} />
+    <details className="space-y-3 border-t border-slate-200 pt-3 text-sm">
+      <summary className="cursor-pointer font-semibold">Auditoría de decisiones y correcciones</summary>
+      {history.decisiones.length === 0 && <Empty>Aún no hay decisiones auditadas.</Empty>}
+      <ol className="divide-y divide-slate-100">
+        {history.decisiones.map((decision) => <li key={decision.id} className="space-y-1 py-3">
+          <strong>{label(decision.accion.replaceAll("_", " "))} · Incidente #{decision.incidente_id}</strong>
+          <p className="text-xs text-slate-600">{localDate(decision.creado)} · Responsable #{decision.actor_id}</p>
+          <p>{decision.motivo}</p><Evidence value={decision.datos} />
+        </li>)}
+      </ol>
+      {audit.map((measure) => <div key={measure.id} className="ml-evidence">
+        <p><strong>Medida anulada #{measure.id}</strong> · {label(measure.tipo)}</p>
+        <p>{measure.motivo}</p>
+        {history.descargos.filter((appeal) => appeal.medida_id === measure.id).map((appeal) =>
+          <p key={appeal.id}>Descargo registrado · {appeal.decision ?? appeal.texto}</p>)}
+      </div>)}
+      {history.incidentes.filter((item) => item.estado === "anulado").map((item) => (
+        <p key={item.id}>Infracción anulada #{item.id} · {localDate(item.ocurrido)}</p>
+      ))}
+    </details>
   </section>;
 }
 
@@ -138,18 +215,24 @@ export default function AnomalyWorkspace() {
   const data = useLoaderData<typeof loader>();
   const filters = data.ok ? data.query : {};
   const offset = Number(filters.offset ?? 0);
-  return <Workspace module="anomalias" view={data.ok ? data.view : undefined}>
+  return <Workspace module="anomalias" view={data.ok ? data.view : undefined}
+    source={data.ok ? data.dashboard?.origen : undefined}>
     {!data.ok ? <WorkspaceError message={data.error} /> : <>
       {data.view === "practica" ? data.practice
         ? <AnomalyPractice key={data.practice.version} data={data.practice} />
-        : <WorkspaceError message={data.practiceError ?? "La práctica no está disponible."} /> : <>
+        : <WorkspaceError message={data.practiceError ?? "La evaluación no está disponible."} /> : <>
+      {data.dashboard && <Overview data={data.dashboard} policies={data.normas} />}
       <section id="incidentes" className="space-y-3">
-        <h2 className="text-xl font-bold">Alertas e incidentes</h2>
+        <h2 className="text-xl font-bold">Bandeja de revisión</h2>
+        <p className="text-sm text-slate-600">Abre la evidencia de un caso y registra la decisión en su expediente.</p>
         <div className={`${card} space-y-3`}>
-          <Operation<{ disponible: boolean; alertas: number; muestras?: number; mensaje?: string }>
+          {data.model.activo && data.model.compatible ? <Operation<{ disponible: boolean; alertas: number; muestras?: number; mensaje?: string }>
             intent="analizar" label="Analizar semanas recientes" view={(result) => <p className="text-sm">
               {result.mensaje ?? `${result.alertas} alertas nuevas de ${result.muestras} periodos por cuenta.`}
-            </p>} />
+            </p>} /> : <p className="text-sm text-slate-600">
+              El análisis automático requiere un modelo operativo activo.
+              <Link className="ml-1 font-semibold underline" to="?vista=practica">Explorar la evaluación del modelo</Link>.
+            </p>}
           <details open={Boolean(filters.asistencia || filters.alerta) || undefined} className="space-y-2">
             <summary className="cursor-pointer font-medium">Registrar incidente con evidencia</summary>
             <Operation intent="incidente" label="Registrar incidente">
@@ -171,7 +254,7 @@ export default function AnomalyWorkspace() {
           <Button type="submit" size="sm">Buscar incidentes</Button>
         </Form>
         <div className="grid gap-3 xl:grid-cols-2">
-          {data.incidentes.length === 0 && <p className="text-sm">No hay resultados para el filtro seleccionado.</p>}
+          {data.incidentes.length === 0 && <Empty>No hay incidentes para el filtro seleccionado.</Empty>}
           {data.incidentes.map((incident) => <CaseCard key={incident.id} incident={incident} policies={data.normas} />)}
         </div>
         {(offset > 0 || data.incidentes.length === 100) && <Form method="get" className="flex gap-2">
@@ -192,4 +275,3 @@ export default function AnomalyWorkspace() {
     </>}
   </Workspace>;
 }
-

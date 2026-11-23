@@ -57,13 +57,3 @@ export function Operation<T = unknown>({ intent, id, label: buttonLabel, confirm
     </fetcher.Form>
   );
 }
-
-export function JsonDetails({ label: summary, value }: { label: string; value: unknown }) {
-  return <details className="text-sm">
-    <summary className="cursor-pointer font-medium">{summary}</summary>
-    <pre className="mt-2 overflow-auto max-h-80 rounded-lg bg-[var(--bg-surface)] p-3 text-xs whitespace-pre-wrap break-words">
-      {JSON.stringify(value, null, 2)}
-    </pre>
-  </details>;
-}
-

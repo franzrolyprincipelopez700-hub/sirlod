@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { FaArrowRight, FaCalendarCheck, FaExclamationTriangle, FaSlidersH } from "react-icons/fa";
 import { Button, Input, Select } from "~/shared/components/ui";
+import { Panel, Ring } from "./charts";
 import { card, percent } from "./shared";
 import { Stat } from "./workspace";
 import type { Demo, PracticeCase } from "./types";
@@ -128,18 +129,24 @@ export function AnomalyPractice({ data }: { data: Demo }) {
   const [week, setWeek] = useState(weeks.at(-1) ?? "");
   const [account, setAccount] = useState("");
   const [selected, setSelected] = useState<number | null>(null);
-  const [decisions, setDecisions] = useState<Record<number, "Revisada" | "Descartada">>({});
   const threshold = data.umbrales.umbral;
   const alerted = (row: PracticeCase) => threshold !== undefined && row.puntuacion > threshold;
   const rows = data.muestras.filter((row) => row.fecha === week && row.cuenta?.toLowerCase().includes(account.trim().toLowerCase()))
     .sort((a, b) => b.puntuacion - a.puntuacion);
   const active = rows.find((row) => row.id === selected) ?? rows[0];
+  const unusual = rows.filter(alerted).length;
   return <div className="space-y-4">
     <dl className="grid grid-cols-1 gap-3 sm:grid-cols-3">
       <Stat label="Cuentas evaluadas" value={rows.length} detail="Para la semana y la búsqueda actuales" />
-      <Stat label="Alertas por revisar" value={rows.filter((row) => alerted(row) && !decisions[row.id]).length} detail="Puntuaciones sobre el umbral" />
+      <Stat label="Por encima del umbral" value={unusual} detail="Patrones que el modelo marca para análisis" />
       <Stat label="Umbral del modelo" value={threshold === undefined ? "—" : numberFormat.format(threshold)} detail="Puntuación de rareza, no probabilidad" />
     </dl>
+    {threshold !== undefined && <Panel title="Patrones de la semana" subtitle="Clasificación por puntuación de rareza">
+      <Ring label="Cuentas" data={[
+        { label: "Patrón habitual", value: rows.length - unusual, color: "#16766e" },
+        { label: "Patrón inusual", value: unusual, color: "#bb6d20" },
+      ]} />
+    </Panel>}
     <div className="grid items-start gap-4 xl:grid-cols-[1.35fr_1fr]">
       <section className={`${card} min-w-0 space-y-4`}>
         <h2 className="text-lg font-semibold">Actividad por cuenta</h2>
@@ -150,7 +157,7 @@ export function AnomalyPractice({ data }: { data: Demo }) {
         <DataTable title="Actividad por cuenta" columns={["Cuenta", "Rareza", "Estado", "Evidencia"]}
           rows={rows.map((row) => ({ id: row.id, cells: [
             row.cuenta, numberFormat.format(row.puntuacion),
-            decisions[row.id] ? <Tag color="blue">{decisions[row.id]}</Tag> : alerted(row) ? <Tag color="amber">Por revisar</Tag> : <Tag>Habitual</Tag>,
+            alerted(row) ? <Tag color="amber">Inusual</Tag> : <Tag>Habitual</Tag>,
             <button type="button" onClick={() => setSelected(row.id)} aria-pressed={active?.id === row.id}
               className="inline-flex items-center gap-1.5 font-semibold text-[#175b91] hover:underline"
               aria-label={`Ver evidencia de ${row.cuenta}`}>Ver <FaArrowRight size={10} aria-hidden="true" /></button>,
@@ -167,12 +174,9 @@ export function AnomalyPractice({ data }: { data: Demo }) {
             <dd className="mt-1 text-base font-semibold tabular-nums">{numberFormat.format(Number(active.variables[key]))}</dd>
           </div>)}
         </dl>
-        {alerted(active) && (decisions[active.id] ? <p role="status" className="text-sm font-medium text-[#175b91]">
-          {decisions[active.id]} en esta sesión.
-        </p> : <div className="flex flex-wrap gap-2">
-          <Button size="sm" type="button" onClick={() => setDecisions({ ...decisions, [active.id]: "Revisada" })}>Marcar revisada</Button>
-          <Button size="sm" variant="secondary" type="button" onClick={() => setDecisions({ ...decisions, [active.id]: "Descartada" })}>Descartar</Button>
-        </div>)}
+        {alerted(active) && <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-950">
+          La puntuación supera el umbral de evaluación. Consulta las variables para interpretar el patrón.
+        </p>}
       </section>}
     </div>
   </div>;
@@ -192,12 +196,21 @@ export function AttendancePractice({ data }: { data: Demo }) {
   const slots = data.muestras.filter((row) => row.fecha === day).sort((a, b) => b.puntuacion - a.puntuacion);
   const rows = slots.filter((row) => !filter || level(row) === filter);
   const active = rows.find((row) => row.id === inspected) ?? rows[0];
+  const high = slots.filter((row) => level(row) === "Alto").length;
+  const medium = slots.filter((row) => level(row) === "Medio").length;
   return <div className="space-y-4">
     <dl className="grid grid-cols-1 gap-3 sm:grid-cols-3">
       <Stat label="Turnos evaluados" value={slots.length} detail="Para la fecha seleccionada" />
-      <Stat label="Riesgo alto" value={slots.filter((row) => level(row) === "Alto").length} detail="Prioridad para seguimiento" />
-      <Stat label="Riesgo medio" value={slots.filter((row) => level(row) === "Medio").length} detail="Seguimiento según criterio del administrador" />
+      <Stat label="Riesgo alto" value={high} detail="Prioridad para seguimiento" />
+      <Stat label="Riesgo medio" value={medium} detail="Seguimiento según criterio del administrador" />
     </dl>
+    <Panel title="Distribución de riesgo" subtitle={day ? dateLabel(day) : undefined}>
+      <Ring label="Turnos" data={[
+        { label: "Bajo", value: slots.length - high - medium, color: "#16766e" },
+        { label: "Medio", value: medium, color: "#3978b2" },
+        { label: "Alto", value: high, color: "#bb6d20" },
+      ]} />
+    </Panel>
     <div className="grid items-start gap-4 xl:grid-cols-[1.5fr_1fr]">
       <section className={`${card} min-w-0 space-y-4`}>
         <h2 className="text-lg font-semibold">Turnos por prioridad</h2>

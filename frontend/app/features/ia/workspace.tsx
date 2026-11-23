@@ -1,58 +1,56 @@
 import type { ReactNode } from "react";
-import { FaCalendarAlt, FaChartLine, FaClipboardCheck, FaFlask, FaShieldAlt } from "react-icons/fa";
+import { FaCalendarAlt, FaChartLine, FaClipboardCheck, FaDatabase, FaFlask, FaShieldAlt } from "react-icons/fa";
 import { Link } from "react-router";
-import { card, JsonDetails, label, localDate, Operation } from "./shared";
+import { decimal, Empty, integer } from "./charts";
+import { card, label, localDate, Operation, percent } from "./shared";
 import type { ModelGroup, Module, Version, WorkspaceView } from "./types";
+import "./analytics.css";
 
 const workspaces = {
   demanda: {
     title: "Demanda de losas",
-    description: "Consulta la ocupación por turno y encuentra las franjas con menor demanda.",
+    description: "Identifica las horas de mayor uso y consulta qué turnos están libres.",
     icon: FaChartLine,
   },
   anomalias: {
     title: "Alertas de actividad",
-    description: "Revisa patrones de reserva inusuales, evidencias y decisiones administrativas.",
+    description: "Consulta patrones de reserva y documenta las decisiones de revisión.",
     icon: FaShieldAlt,
   },
   inasistencia: {
     title: "Asistencia y riesgo",
-    description: "Consulta qué turnos requieren seguimiento y revisa los resultados de asistencia.",
+    description: "Revisa los resultados registrados y prioriza el seguimiento de los próximos turnos.",
     icon: FaClipboardCheck,
   },
 };
 
-export function Workspace({ module, view, children }: {
-  module: Module; view?: WorkspaceView; children: ReactNode;
+export function Workspace({ module, view, source, children }: {
+  module: Module; view?: WorkspaceView; source?: "demostracion" | "institucional"; children: ReactNode;
 }) {
   const { title, description, icon: Icon } = workspaces[module];
-  return <div className="min-w-0 space-y-5">
-    <header className="flex flex-wrap items-center justify-between gap-6 rounded-2xl bg-linear-to-br from-[#112a45] to-[#175283] p-5 text-white shadow-sm sm:p-7">
-      <div className="flex min-w-0 items-start gap-4">
-        <div className="grid size-11 shrink-0 place-items-center rounded-xl border border-white/20 bg-white/10 text-sky-100 sm:size-13">
-          <Icon size={21} aria-hidden="true" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight sm:text-[1.9rem]">{title}</h1>
-          <p className="mt-1 max-w-lg text-sm leading-relaxed text-blue-100">{description}</p>
-        </div>
-      </div>
-      {view && <nav aria-label="Entorno de trabajo" className="inline-flex rounded-xl border border-white/20 bg-black/15 p-1">
-        {([{ key: "practica", name: "Práctica", icon: FaFlask }, {
-          key: "operacion", name: "Operación", icon: FaCalendarAlt,
-        }] as const).map(({ key, name, icon: ModeIcon }) =>
-          <Link key={key} to={`?vista=${key}`} aria-current={view === key ? "page" : undefined}
-            className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${
-              view === key ? "bg-white text-[#153e61] shadow-sm" : "text-blue-100 hover:bg-white/10 hover:text-white"
-            }`}>
-            <ModeIcon size={12} aria-hidden="true" />{name}
-          </Link>)}
-      </nav>}
+  return <div className="ml-page min-w-0 space-y-5" data-module={module}>
+    <header className="ml-hero">
+      <div className="ml-kicker"><Icon aria-hidden="true" /> Analítica de reservas</div>
+      <h1>{title}</h1>
+      <p>{description}</p>
     </header>
-    {view === "practica" && <div className="flex items-start gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-[#224e72]">
-      <FaFlask size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
-      <p><strong>Entorno de práctica.</strong> Los casos y las acciones de esta vista son de prueba y están aislados de la operación.</p>
+    {view && <div className="flex flex-wrap items-center justify-between gap-3">
+      <nav aria-label="Vistas de análisis" className="ml-tabs">
+        {([{ key: "operacion", name: "Operación", icon: FaCalendarAlt }, {
+          key: "practica", name: "Evaluación del modelo", icon: FaFlask,
+        }] as const).map(({ key, name, icon: ModeIcon }) =>
+          <Link key={key} to={key === "operacion" ? "?" : "?vista=practica"}
+            aria-current={view === key ? "page" : undefined}>
+            <ModeIcon aria-hidden="true" />{name}
+          </Link>)}
+      </nav>
+      <p className="ml-source"><FaDatabase aria-hidden="true" />{view === "practica"
+        ? "Conjunto de evaluación sintético"
+        : source === "institucional" ? "Registros institucionales" : "Registros de demostración"}</p>
     </div>}
+    {view === "practica" && <p className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+      Los ejemplos reproducen la inferencia del modelo entrenado. Las decisiones y sus evidencias se registran en <Link to="?" className="font-semibold underline">Operación</Link>.
+    </p>}
     {children}
   </div>;
 }
@@ -62,36 +60,95 @@ export function WorkspaceError({ message }: { message: string }) {
 }
 
 export function Stat({ label: title, value, detail }: { label: string; value: ReactNode; detail: string }) {
-  return <div className="min-w-0 rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] px-4 py-3.5 shadow-xs">
-    <dt className="text-sm font-medium text-[var(--text-secondary)]">{title}</dt>
-    <dd className="mt-1 text-2xl font-semibold tracking-tight text-[var(--text-primary)] tabular-nums">{value}</dd>
-    <dd className="mt-0.5 text-xs text-[var(--text-secondary)]">{detail}</dd>
+  return <div className="ml-stat">
+    <dt>{title}</dt>
+    <dd>{value}</dd>
+    <dd>{detail}</dd>
   </div>;
 }
 
-const metrics: Record<string, string> = {
-  brier: "Error Brier", roc_auc: "ROC-AUC", f1: "F1", precision: "Precisión",
-  recall: "Sensibilidad", tasa_alertas: "Tasa de alertas", sensibilidad_perturbacion: "Detección de perturbaciones",
-};
+const metrics = [
+  { key: "brier", title: "Error Brier", detail: "Más bajo indica probabilidades más precisas", ratio: false },
+  { key: "roc_auc", title: "ROC-AUC", detail: "Capacidad para diferenciar ambos resultados", ratio: false },
+  { key: "roc_auc_demo", title: "ROC-AUC en evaluación", detail: "Separación de casos sintéticos", ratio: false },
+  { key: "f1", title: "F1", detail: "Equilibrio entre precisión y sensibilidad", ratio: false },
+  { key: "precision", title: "Precisión", detail: "Aciertos entre las predicciones positivas", ratio: true },
+  { key: "recall", title: "Sensibilidad", detail: "Casos positivos detectados", ratio: true },
+  { key: "tasa_alertas", title: "Tasa de alertas", detail: "Muestras por encima del umbral", ratio: true },
+  { key: "sensibilidad_perturbacion", title: "Sensibilidad a cambios", detail: "Respuesta a actividad alterada en la prueba", ratio: true },
+];
+
+function readable(value: unknown): string {
+  return typeof value === "number" && Number.isFinite(value) ? decimal.format(value) : "—";
+}
+
+function Partitions({ version }: { version: Version }) {
+  const rows = version.evaluacion.particiones;
+  if (!Array.isArray(rows) || !rows.length) return null;
+  const names = rows.length === 4
+    ? ["Entrenamiento", "Calibración", "Validación", "Prueba"]
+    : ["Entrenamiento", "Validación", "Prueba"];
+  return <details className="space-y-3 rounded-xl border border-slate-200 px-4 py-3 text-sm">
+    <summary className="cursor-pointer font-semibold">Particiones por fecha</summary>
+    <dl className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+      {rows.map((part, i) => <div key={names[i] ?? i} className="ml-evidence">
+        <dt>{names[i]}</dt>
+        <dd className="my-1 font-semibold">{readable(part.n)} ejemplos</dd>
+        {part.inicio && part.fin && <dd className="text-xs">{localDate(part.inicio)} – {localDate(part.fin)}</dd>}
+      </div>)}
+    </dl>
+  </details>;
+}
 
 function VersionDetails({ version, allowActivation }: { version: Version; allowActivation: boolean }) {
   const values = version.evaluacion.prueba;
-  return <div className="space-y-3">
-    <p className="text-sm text-[var(--text-secondary)]">
-      {version.algoritmo ?? "Sin estimador"} · {version.evaluacion.total.toLocaleString("es-PE")} ejemplos · {localDate(version.creado)}
-    </p>
-    {version.evaluacion.motivo && <p className="text-sm">{version.evaluacion.motivo}</p>}
-    {values && <dl className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-      {Object.entries(metrics).map(([key, name]) => {
+  const candidates = version.evaluacion.validacion;
+  const matrix = values?.matriz_confusion;
+  const calibration = values?.calibracion;
+  return <div className="space-y-4">
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div><p className="font-bold text-slate-900">{version.algoritmo ?? label(version.estado)}</p>
+        <p className="text-sm text-slate-600">{integer.format(version.evaluacion.total ?? 0)} ejemplos · {localDate(version.creado)}</p></div>
+      <span className="text-xs text-slate-600" title={version.version}>Versión {version.version.slice(0, 8)}</span>
+    </div>
+    {version.evaluacion.motivo && <p className="text-sm text-slate-700">{version.evaluacion.motivo}</p>}
+    {values && <dl className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+      {metrics.map(({ key, title, detail, ratio }) => {
         const value = values[key];
-        return typeof value === "number" && <div key={key} className="rounded-lg bg-[var(--bg-surface)] p-2.5">
-          <dt className="text-xs text-[var(--text-secondary)]">{name}</dt>
-          <dd className="font-semibold tabular-nums">{value.toFixed(3)}</dd>
-        </div>;
+        return typeof value === "number" && <Stat key={key} label={title} detail={detail} value={ratio ? percent(value) : readable(value)} />;
       })}
     </dl>}
-    <JsonDetails label="Ver evaluación y particiones" value={version.evaluacion} />
-    <p className="break-all font-mono text-xs text-[var(--text-secondary)]">Versión {version.version}</p>
+    {Array.isArray(matrix) && matrix.length === 2 && matrix.every((row) => Array.isArray(row) && row.length === 2) &&
+      <div className="grid gap-3 lg:grid-cols-2">
+        <div className="ml-evidence">
+          <h3 className="mb-2 text-sm font-bold">Matriz de confusión</h3>
+          <table className="w-full text-sm">
+            <thead><tr><th scope="col" className="text-left">Observado</th><th scope="col">Previó no</th><th scope="col">Previó sí</th></tr></thead>
+            <tbody>{matrix.map((row, i) => <tr key={i} className="border-t border-slate-200">
+              <th scope="row" className="py-1.5 text-left font-medium">{i ? "Sí" : "No"}</th>
+              {row.map((value: unknown, j: number) => <td key={j} className="py-1.5 text-center font-semibold">{readable(value)}</td>)}
+            </tr>)}</tbody>
+          </table>
+        </div>
+        {Array.isArray(calibration) && <div className="ml-evidence">
+          <h3 className="mb-2 text-sm font-bold">Probabilidad estimada y frecuencia observada</h3>
+          <ul className="space-y-1.5 text-sm">{calibration.map((row, i) => <li key={i} className="flex justify-between gap-2">
+            <span>Estimó {percent(row.predicho)}</span><strong>Ocurrió {percent(row.observado)}</strong>
+          </li>)}</ul>
+        </div>}
+      </div>}
+    {candidates !== null && typeof candidates === "object" && <details className="space-y-2 text-sm">
+      <summary className="cursor-pointer font-semibold">Comparación de algoritmos</summary>
+      <ul className="divide-y divide-slate-200">
+        {Object.entries(candidates).map(([method, result]) => <li key={method} className="flex flex-wrap justify-between gap-2 py-2">
+          <strong>{method}</strong>
+          <span>{typeof result.brier === "number"
+            ? "Error Brier " + readable(result.brier)
+            : "Sensibilidad a cambios " + (typeof result.sensibilidad_perturbacion === "number" ? percent(result.sensibilidad_perturbacion) : "—")}</span>
+        </li>)}
+      </ul>
+    </details>}
+    <Partitions version={version} />
     {allowActivation && version.modo === "real" && version.estado === "evaluado" && !version.activo &&
       <Operation intent="activar" id={version.version} label="Habilitar versión operativa"
         confirm="¿Habilitar esta versión para las predicciones operativas de SIRLOD?" />}
@@ -99,23 +156,26 @@ function VersionDetails({ version, allowActivation }: { version: Version; allowA
 }
 
 export function ModelDetails({ model, view }: { model: ModelGroup; view: WorkspaceView }) {
-  const versions = model.versiones.filter((version) => version.modo === (view === "practica" ? "demo" : "real"));
-  const current = view === "operacion" ? model.activo ?? versions[0] : versions[0];
-  const status = view === "practica" ? (current ? label(current.estado) : "Pendiente de entrenamiento") :
-    model.activo ? (model.compatible ? "Activo" : "Requiere reentrenamiento") : "Sin modelo operativo activo";
+  const lab = view === "practica";
+  const versions = model.versiones.filter((version) => version.modo === (lab ? "demo" : "real"));
+  const current = lab ? versions[0] : model.activo ?? versions[0];
+  const status = model.activo && !lab ? (model.compatible ? "Activo" : "Requiere reentrenamiento")
+    : current ? label(current.estado) : "Sin modelo operativo activo";
   const others = versions.filter((version) => version.version !== current?.version);
-  return <details className={`${card} space-y-4`}>
+  return <details className={card + " ml-panel space-y-4"} open={lab || undefined}>
     <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 font-semibold [&::-webkit-details-marker]:hidden">
-      <span className="inline-flex items-center gap-2"><FaChartLine className="text-[#1B6EB6]" aria-hidden="true" /> Modelo y evaluación</span>
-      <span className="rounded-full bg-[var(--bg-surface)] px-3 py-1 text-xs text-[var(--text-secondary)]">{status}</span>
+      <span className="inline-flex items-center gap-2"><FaChartLine className="text-[#1B6EB6]" aria-hidden="true" /> {lab ? "Resultados del entrenamiento" : "Estado del modelo operativo"}</span>
+      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-700">{status}</span>
     </summary>
-    {view === "operacion" && <p className="text-sm text-[var(--text-secondary)]">Predicciones registradas: {model.predicciones_registradas}</p>}
-    {current && <VersionDetails version={current} allowActivation={view === "operacion"} />}
+    {!lab && <p className="text-sm text-slate-600">{integer.format(model.predicciones_registradas)} predicciones operativas registradas. <Link to="?vista=practica" className="font-semibold underline">Consultar evaluación</Link></p>}
+    {current ? <VersionDetails version={current} allowActivation={!lab} /> : <Empty>
+      El modelo operativo requiere historial institucional suficiente y una evaluación aprobada.
+    </Empty>}
     {others.length > 0 && <details className="space-y-2">
       <summary className="cursor-pointer text-sm font-semibold">Versiones anteriores</summary>
-      {others.map((version) => <details key={version.version} className="space-y-2 rounded-lg border border-[var(--border-color)] p-3">
+      {others.map((version) => <details key={version.version} className="space-y-2 rounded-lg border border-slate-200 p-3">
         <summary className="cursor-pointer text-sm">{localDate(version.creado)} · {label(version.estado)}</summary>
-        <VersionDetails version={version} allowActivation={view === "operacion"} />
+        <VersionDetails version={version} allowActivation={!lab} />
       </details>)}
     </details>}
   </details>;

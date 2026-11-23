@@ -12,6 +12,7 @@ from app.core.security import AuthenticatedUser, CurrentUser
 from app.core.serialization import model_dict
 from app.models import User
 from app.modules.learning import discipline, registry, service
+from app.modules.learning.dashboard import dashboard
 from app.modules.learning.models import Incident, ModelVersion, Policy, Prediction
 from app.modules.learning.schemas import (
     AttendanceIn,
@@ -52,6 +53,11 @@ Staff = Annotated[CurrentUser, Depends(staff_check)]
 Member = Annotated[CurrentUser, Depends(member_check)]
 
 router = APIRouter(prefix="/aprendizaje", tags=["Aprendizaje automático"], dependencies=[Depends(private)])
+
+
+@router.get("/panel/{modulo}")
+async def panel(db: DBSession, _actor: Admin, modulo: Module, fecha: date | None = None) -> dict[str, Any]:
+    return await dashboard(db, modulo, fecha)
 
 
 @router.get("/modelos")

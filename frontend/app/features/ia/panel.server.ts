@@ -66,7 +66,8 @@ export async function action({ request }: ActionFunctionArgs) {
       case "incidente-revision":
         if (!numeric) throw new Response("Incidente inválido", { status: 400 });
         result = await post(`/incidentes/${id}/revision`, {
-          decision: field("decision"), motivo: field("motivo"), evidencia: field("evidencia"), gravedad: field("gravedad"),
+          decision: field("decision"), motivo: field("motivo"), evidencia: field("evidencia"),
+          gravedad: field("gravedad") || "ordinaria",
         });
         break;
       case "norma":

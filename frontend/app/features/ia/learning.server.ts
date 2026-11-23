@@ -1,6 +1,6 @@
 import { data } from "react-router";
 import { api, ApiError, responseHeadersWithCookies } from "~/services/api.server";
-import type { Demo, ModelGroup, Module, WorkspaceView } from "./types";
+import type { DashboardSummary, Demo, ModelGroup, Module, WorkspaceView } from "./types";
 
 export async function activateVersion(request: Request, id: string) {
   if (!/^[\da-f-]{36}$/i.test(id)) throw new Response("Versión inválida", { status: 400 });
@@ -13,12 +13,12 @@ export async function loadWorkspace(request: Request, module: Module) {
   if (!model) throw new Error("El módulo solicitado no está disponible");
 
   const query = new URL(request.url).searchParams;
-  const selection = query.get("vista");
-  const hasFilters = [...query.keys()].some((key) => key !== "vista");
-  const view: WorkspaceView = selection === "practica" || (
-    selection !== "operacion" && !hasFilters && !model.activo &&
-    model.versiones.some((version) => version.modo === "demo" && version.algoritmo)
-  ) ? "practica" : "operacion";
+  const view: WorkspaceView = query.get("vista") === "practica" ? "practica" : "operacion";
+  const date = query.get("fecha");
+  const filters = date ? "?" + new URLSearchParams({ fecha: date }) : "";
+  const dashboard = view === "operacion"
+    ? await api.get("/aprendizaje/panel/" + module + filters, request) as DashboardSummary
+    : null;
 
   let practice: Demo | null = null;
   let practiceError: string | null = null;
@@ -31,7 +31,7 @@ export async function loadWorkspace(request: Request, module: Module) {
       practiceError = body?.errors?.[0]?.msg ?? "La versión de práctica requiere entrenamiento.";
     }
   }
-  return { model, view, practice, practiceError };
+  return { model, view, practice, practiceError, dashboard };
 }
 
 export function reply<T>(request: Request, payload: T, status = 200) {

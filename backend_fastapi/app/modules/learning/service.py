@@ -54,6 +54,7 @@ async def forecast(
     owner: int | None = None,
     kind: Kind = "Normal",
     discipline: int | None = None,
+    register_predictions: bool = True,
 ) -> dict[str, Any]:
     now = campus_now()
     if not now.date() <= day <= now.date() + timedelta(days=30):
@@ -141,7 +142,7 @@ async def forecast(
             key=lambda row: (row["demanda"] is None, row["demanda"] or 0, row["hora_inicio"], row["id_l"])
         )
         result = result[:6]
-    elif model:
+    elif model and register_predictions:
         await save_scores(
             db,
             model,
