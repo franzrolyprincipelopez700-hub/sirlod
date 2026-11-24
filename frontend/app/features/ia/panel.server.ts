@@ -1,7 +1,7 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { api } from "~/services/api.server";
 import { requireRole } from "~/services/auth.server";
-import { activateVersion, failure, loadWorkspace, reply, validMutation } from "./learning.server";
+import { activateVersion, failure, loadWorkspace, reply, validMutation, workspaceView } from "./learning.server";
 import type { Case, History, Policy } from "./types";
 
 const base = "/aprendizaje";
@@ -34,7 +34,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 export async function action({ request }: ActionFunctionArgs) {
   await requireRole(request, "trabajador", "Administrador");
   validMutation(request);
-  if (new URL(request.url).searchParams.get("vista") === "practica") {
+  if (workspaceView(new URL(request.url).searchParams) === "practica") {
     throw new Response("Las decisiones operativas requieren la vista Operación", { status: 400 });
   }
   const form = await request.formData();

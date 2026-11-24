@@ -7,13 +7,18 @@ export async function activateVersion(request: Request, id: string) {
   return api.post(`/aprendizaje/modelos/${id}/activar`, request);
 }
 
+export function workspaceView(query: URLSearchParams): WorkspaceView {
+  const view = query.get("vista");
+  return view === "evaluacion" || view === "practica" ? "practica" : "operacion";
+}
+
 export async function loadWorkspace(request: Request, module: Module) {
   const { modelos } = await api.get("/aprendizaje/modelos", request) as { modelos: ModelGroup[] };
   const model = modelos.find((item) => item.modulo === module);
   if (!model) throw new Error("El módulo solicitado no está disponible");
 
   const query = new URL(request.url).searchParams;
-  const view: WorkspaceView = query.get("vista") === "practica" ? "practica" : "operacion";
+  const view = workspaceView(query);
   const date = query.get("fecha");
   const filters = date ? "?" + new URLSearchParams({ fecha: date }) : "";
   const dashboard = view === "operacion"
@@ -28,7 +33,7 @@ export async function loadWorkspace(request: Request, module: Module) {
     } catch (error) {
       if (!(error instanceof ApiError) || error.status !== 409) throw error;
       const body = error.data as { errors?: { msg?: string }[] } | undefined;
-      practiceError = body?.errors?.[0]?.msg ?? "La versión de práctica requiere entrenamiento.";
+      practiceError = body?.errors?.[0]?.msg ?? "La versión de evaluación requiere entrenamiento.";
     }
   }
   return { model, view, practice, practiceError, dashboard };

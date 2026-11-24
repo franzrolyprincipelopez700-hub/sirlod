@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { FaCalendarAlt, FaChartLine, FaClipboardCheck, FaDatabase, FaFlask, FaShieldAlt } from "react-icons/fa";
+import { FaCalendarAlt, FaChartLine, FaClipboardCheck, FaFlask, FaShieldAlt } from "react-icons/fa";
 import { Link } from "react-router";
 import { decimal, Empty, integer } from "./charts";
 import { card, label, localDate, Operation, percent } from "./shared";
@@ -24,8 +24,8 @@ const workspaces = {
   },
 };
 
-export function Workspace({ module, view, source, children }: {
-  module: Module; view?: WorkspaceView; source?: "demostracion" | "institucional"; children: ReactNode;
+export function Workspace({ module, view, children }: {
+  module: Module; view?: WorkspaceView; children: ReactNode;
 }) {
   const { title, description, icon: Icon } = workspaces[module];
   return <div className="ml-page min-w-0 space-y-5" data-module={module}>
@@ -34,22 +34,19 @@ export function Workspace({ module, view, source, children }: {
       <h1>{title}</h1>
       <p>{description}</p>
     </header>
-    {view && <div className="flex flex-wrap items-center justify-between gap-3">
+    {view && <div>
       <nav aria-label="Vistas de análisis" className="ml-tabs">
         {([{ key: "operacion", name: "Operación", icon: FaCalendarAlt }, {
           key: "practica", name: "Evaluación del modelo", icon: FaFlask,
         }] as const).map(({ key, name, icon: ModeIcon }) =>
-          <Link key={key} to={key === "operacion" ? "?" : "?vista=practica"}
+          <Link key={key} to={key === "operacion" ? "?" : "?vista=evaluacion"}
             aria-current={view === key ? "page" : undefined}>
             <ModeIcon aria-hidden="true" />{name}
           </Link>)}
       </nav>
-      <p className="ml-source"><FaDatabase aria-hidden="true" />{view === "practica"
-        ? "Conjunto de evaluación sintético"
-        : source === "institucional" ? "Registros institucionales" : "Registros de demostración"}</p>
     </div>}
     {view === "practica" && <p className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
-      Los ejemplos reproducen la inferencia del modelo entrenado. Las decisiones y sus evidencias se registran en <Link to="?" className="font-semibold underline">Operación</Link>.
+      La evaluación ejecuta el modelo entrenado sobre un conjunto sintético de validación. Las decisiones y evidencias se registran en <Link to="?" className="font-semibold underline">Operación</Link>.
     </p>}
     {children}
   </div>;
@@ -167,7 +164,7 @@ export function ModelDetails({ model, view }: { model: ModelGroup; view: Workspa
       <span className="inline-flex items-center gap-2"><FaChartLine className="text-[#1B6EB6]" aria-hidden="true" /> {lab ? "Resultados del entrenamiento" : "Estado del modelo operativo"}</span>
       <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-700">{status}</span>
     </summary>
-    {!lab && <p className="text-sm text-slate-600">{integer.format(model.predicciones_registradas)} predicciones operativas registradas. <Link to="?vista=practica" className="font-semibold underline">Consultar evaluación</Link></p>}
+    {!lab && <p className="text-sm text-slate-600">{integer.format(model.predicciones_registradas)} predicciones operativas registradas. <Link to="?vista=evaluacion" className="font-semibold underline">Consultar evaluación</Link></p>}
     {current ? <VersionDetails version={current} allowActivation={!lab} /> : <Empty>
       El modelo operativo requiere historial institucional suficiente y una evaluación aprobada.
     </Empty>}

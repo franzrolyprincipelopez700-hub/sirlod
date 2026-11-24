@@ -19,7 +19,7 @@ async def _postgres_rows(
 
 async def get_usuario(codigo: str, *, db: AsyncSession | None = None) -> dict[str, Any] | None:
     """Consulta un usuario académico por código."""
-    if settings.is_practice or settings.unheval_source == "postgresql":
+    if settings.uses_postgres_roster:
         rows = await _postgres_rows(
             f"SELECT * FROM {settings.unheval_view} WHERE codigo = :codigo LIMIT 1",
             {"codigo": codigo},
@@ -44,7 +44,7 @@ async def get_usuario(codigo: str, *, db: AsyncSession | None = None) -> dict[st
 
 async def list_usuarios(*, db: AsyncSession | None = None) -> list[dict[str, Any]]:
     """Obtiene la vista consolidada de usuarios de la API académica."""
-    if settings.is_practice or settings.unheval_source == "postgresql":
+    if settings.uses_postgres_roster:
         return await _postgres_rows(
             f"SELECT * FROM {settings.unheval_view} ORDER BY nombre_completo", {}, db
         )

@@ -70,11 +70,12 @@ def test_annual_practice_report_without_bookings() -> None:
     report["analisis"] = ai.local_analysis(report).model_dump()
     reader = PdfReader(BytesIO(build_report_pdf(report)))
     extracted = "\n".join(page.extract_text() or "" for page in reader.pages)
-    assert "ENTORNO DE PRÁCTICA" in extracted
+    assert "Fuente de datos: muestra de referencia" in extracted
+    assert "ENTORNO DE PRÁCTICA" not in extracted
     assert "UNHEVAL-SIRLOD-2026-00" in extracted
     assert "No hay franja pico registrada" in extracted
     assert "16:00 a 19:00" not in extracted
-    assert report_filename(report) == "SIRLOD_Practica_Reporte_Ejecutivo_Anual_2026.pdf"
+    assert report_filename(report) == "SIRLOD_Reporte_Ejecutivo_Anual_2026.pdf"
 
 
 @pytest.mark.asyncio

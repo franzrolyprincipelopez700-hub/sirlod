@@ -121,7 +121,7 @@ def report_filename(report: dict[str, Any]) -> str:
     """Genera un nombre institucional, digno y representativo para la descarga oficial."""
     period = str(report.get("periodo", "mensual"))
     anio = int(report.get("anio", 2026))
-    prefix = "SIRLOD_Practica" if report.get("practica") else "SIRLOD"
+    prefix = "SIRLOD"
     if period == "mensual" and report.get("mes"):
         mes_idx = int(report["mes"])
         mes_nombre = MONTHS[mes_idx - 1] if 1 <= mes_idx <= 12 else f"{mes_idx:02d}"
@@ -354,7 +354,7 @@ def build_report_pdf(report: dict[str, Any]) -> bytes:
     )
     story.append(header_table)
     if report.get("practica"):
-        story.append(Paragraph("ENTORNO DE PRÁCTICA", sub_title_style))
+        story.append(Paragraph("Fuente de datos: muestra de referencia", sub_title_style))
     story.append(Spacer(1, 2.5 * mm))
 
     # 2. Cinta de Metadatos del Documento

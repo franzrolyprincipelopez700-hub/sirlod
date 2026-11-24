@@ -12,7 +12,6 @@ export async function loader({ request }: Route.LoaderArgs) {
 }
 
 export default function Login() {
-  const practice = import.meta.env.VITE_SIRLOD_PRACTICE === "1";
   const [searchParams] = useSearchParams();
   const error = searchParams.get("error");
   const [showPassword, setShowPassword] = useState(false);
@@ -47,10 +46,10 @@ export default function Login() {
             </div>
             
             <h1 className="text-2xl font-extrabold text-slate-900 font-display tracking-tight">
-              {practice ? "Acceso de práctica" : "Acceso institucional"}
+              Acceso a SIRLOD
             </h1>
             <p className="text-slate-500 text-xs font-medium mt-1">
-              {practice ? "Ingresa con una de las cuentas habilitadas" : "Ingresa tus credenciales universitarias"}
+              Ingresa con tu código o correo.
             </p>
           </div>
 

@@ -126,8 +126,7 @@ function DemandOperation({ summary }: { summary: DashboardSummary }) {
 
 export default function DemandWorkspace() {
   const data = useLoaderData<typeof loader>();
-  return <Workspace module="demanda" view={data.ok ? data.view : undefined}
-    source={data.ok ? data.dashboard?.origen : undefined}>
+  return <Workspace module="demanda" view={data.ok ? data.view : undefined}>
     {!data.ok ? <WorkspaceError message={data.error} /> : <>
       {data.view === "practica" ? data.practice
         ? <DemandPractice key={data.practice.version} data={data.practice} />

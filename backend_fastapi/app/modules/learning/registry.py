@@ -112,7 +112,7 @@ async def active_model(db: AsyncSession, module: Module) -> tuple[ModelVersion |
 
 async def train(db: AsyncSession, module: Module, mode: str) -> ModelVersion:
     if settings.is_practice and mode == "real":
-        raise AppError("En el entorno de práctica solo se entrenan versiones de práctica", 409)
+        raise AppError("El entrenamiento institucional requiere un historial de uso validado", 409)
     if mode not in {"real", "demo"}:
         raise ValueError("Modo de entrenamiento inválido")
     # Separate runs can train separate models; concurrent runs of the same type are rejected.
@@ -148,7 +148,7 @@ async def train(db: AsyncSession, module: Module, mode: str) -> ModelVersion:
 
 async def activate(db: AsyncSession, version_id: UUID) -> ModelVersion:
     if settings.is_practice:
-        raise AppError("La activación institucional se gestiona desde el entorno institucional", 409)
+        raise AppError("La activación requiere un modelo validado con historial institucional", 409)
     model = await db.get(ModelVersion, version_id)
     if model is None:
         raise AppError("Versión inexistente", 404)

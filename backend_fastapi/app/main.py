@@ -155,13 +155,9 @@ async def health() -> dict[str, str]:
 async def ready() -> dict[str, str]:
     try:
         async with engine.connect() as connection:
-            await connection.execute(text("SELECT 1"))
-            if settings.is_practice or settings.unheval_source == "postgresql":
-                roster = await connection.scalar(
-                    text("SELECT to_regclass(:vista)"), {"vista": settings.unheval_view}
-                )
-                if roster is None:
-                    raise RuntimeError("La vista del padrón no está disponible")
+            await connection.execute(text(f"SELECT 1 FROM {settings.postgres_schema}.users LIMIT 0"))
+            if settings.uses_postgres_roster:
+                await connection.execute(text(f"SELECT 1 FROM {settings.unheval_view} LIMIT 0"))
     except Exception as exc:
         raise HTTPException(status_code=503, detail="Base de datos no disponible") from exc
     return {"status": "READY"}

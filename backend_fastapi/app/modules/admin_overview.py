@@ -3,7 +3,6 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends
 from sqlalchemy import String, func, select
 
-from app.core.config import settings
 from app.core.database import DBSession
 from app.core.security import CurrentUser, require_roles
 from app.core.serialization import model_dict
@@ -37,7 +36,6 @@ async def overview(db: DBSession, _admin: Admin) -> dict[str, Any]:
     )).all()
     return {
         **counts,
-        "entorno": "practica" if settings.is_practice else "institucional",
         "pendientes": states.get("Pendiente", 0),
         "aprobados": states.get("Aceptado", 0),
         "rechazados": states.get("Rechazado", 0),

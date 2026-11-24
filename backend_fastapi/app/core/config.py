@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     )
     postgres_db: str = "losa"
     postgres_schema: str = Field(default="public", pattern=r"^[a-z_][a-z0-9_]{0,62}$")
+    sirlod_data_origin: Literal["institutional", "example"] = "institutional"
     postgres_tls_verify: bool = False
     postgres_tls_ca_cert: Path | None = None
     postgres_tls_ca_pem: str | None = None
@@ -46,6 +47,10 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:5173"]
     unheval_api_url: str = "http://localhost:3001/api"
     unheval_source: Literal["http", "postgresql"] = "http"
+    unheval_postgres_view: str | None = Field(
+        default=None,
+        pattern=r"^[a-z_][a-z0-9_]{0,62}\.[a-z_][a-z0-9_]{0,62}$",
+    )
 
     aws_access_key_id: str = ""
     aws_secret_access_key: str = ""
@@ -109,11 +114,21 @@ class Settings(BaseSettings):
 
     @property
     def is_practice(self) -> bool:
-        return self.postgres_schema == "sirlod_practica"
+        return self.sirlod_data_origin == "example" or self.postgres_schema == "sirlod_practica"
+
+    @property
+    def uses_postgres_roster(self) -> bool:
+        return self.unheval_source == "postgresql" or self.postgres_schema == "sirlod_practica"
 
     @property
     def unheval_view(self) -> str:
-        return "padron_practica.vista_usuario" if self.is_practice else "padron_unheval.vista_usuario"
+        if self.unheval_postgres_view:
+            return self.unheval_postgres_view
+        if self.postgres_schema == "sirlod_practica":
+            return "padron_practica.vista_usuario"
+        if self.sirlod_data_origin == "example":
+            return f"{self.postgres_schema}.vista_usuario"
+        return "padron_unheval.vista_usuario"
 
     @property
     def sqlalchemy_database_url(self) -> str:

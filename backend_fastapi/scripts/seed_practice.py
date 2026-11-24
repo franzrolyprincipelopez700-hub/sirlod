@@ -1,4 +1,4 @@
-"""Provisiona un entorno de práctica en esquemas privados, con acceso limitado."""
+"""Provisiona una instalación privada de SIRLOD con datos de referencia."""
 
 import argparse
 import asyncio
@@ -20,11 +20,11 @@ from sqlalchemy.engine import make_url
 from app.core.clock import LIMA, campus_now
 from app.core.config import settings
 from app.core.security import hash_password
-from scripts.migrate_supabase import ROOT, configuration, connect, ident, initialize
+from scripts.migrate_supabase import ROOT, ROSTER_TABLES, configuration, connect, ident, initialize
 from scripts.supabase_storage import RestBucket, check_private
 
-APP = "sirlod_practica"
-ROSTER = "padron_practica"
+APP = "sirlod"
+ROSTER = APP
 ROLE = "sirlod_practica_app"
 BUCKET = "sirlod-practica"
 ENV = ROOT / "backend_fastapi" / ".env.practice"
@@ -61,7 +61,7 @@ def request_documents(config: dict[str, str]) -> list[tuple[Any, ...]]:
             content = io.BytesIO()
             pdf = canvas.Canvas(content, invariant=True)
             pdf.setTitle("Solicitud de uso de instalaciones")
-            pdf.drawString(62, 770, "SIRLOD | Entorno de práctica")
+            pdf.drawString(62, 770, "SIRLOD | Solicitud de uso deportivo")
             pdf.drawString(62, 727, f"Solicitud de uso deportivo | Referencia {number:02d}")
             pdf.drawString(62, 701, "Coordinación de turnos para actividades académicas y deportivas.")
             pdf.save()
@@ -316,6 +316,8 @@ async def seed(local_url: str | None) -> None:
     try:
         async with db.transaction():
             await db.execute("SELECT pg_advisory_xact_lock(11620017)")
+            if await db.fetchval("SELECT to_regnamespace('sirlod_practica')"):
+                raise ValueError("Consolida primero los esquemas anteriores de SIRLOD.")
             existing = await db.fetchval("SELECT to_regnamespace($1)", APP)
             role_exists = await db.fetchval("SELECT EXISTS(SELECT FROM pg_roles WHERE rolname=$1)", ROLE)
             if bool(existing) != role_exists or (
@@ -349,12 +351,13 @@ async def seed(local_url: str | None) -> None:
                     "SELECT format('CREATE ROLE %I LOGIN PASSWORD %L', $1::text, $2::text)", ROLE, db_password
                 )
                 await db.execute(statement)
-                await db.execute(f"GRANT USAGE ON SCHEMA {APP}, {ROSTER} TO {ROLE}")
+                await db.execute(f"GRANT USAGE ON SCHEMA {APP} TO {ROLE}")
                 await db.execute(
                     f"GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA {APP} TO {ROLE}"
                 )
                 await db.execute(f"GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA {APP} TO {ROLE}")
-                await db.execute(f"GRANT SELECT ON ALL TABLES IN SCHEMA {ROSTER} TO {ROLE}")
+                readonly = ", ".join(f"{APP}.{table}" for table in (*ROSTER_TABLES, "vista_usuario"))
+                await db.execute(f"REVOKE INSERT, UPDATE, DELETE ON {readonly} FROM {ROLE}")
             else:
                 await db.execute(f"SET LOCAL search_path TO {APP}, pg_catalog")
             totals = dict(
@@ -380,6 +383,8 @@ async def seed(local_url: str | None) -> None:
             {
                 "DATABASE_URL": application_url.render_as_string(hide_password=False),
                 "POSTGRES_SCHEMA": APP,
+                "SIRLOD_DATA_ORIGIN": "example",
+                "UNHEVAL_SOURCE": "postgresql",
                 "PRACTICE_DB_PASSWORD": db_password,
                 "PRACTICE_LOGIN_PASSWORD": login,
                 "JWT_SECRET": str(practice_env.get("JWT_SECRET") or secrets.token_urlsafe(32)),
@@ -403,12 +408,14 @@ async def seed(local_url: str | None) -> None:
             "VITE_SIRLOD_PRACTICE": "1",
             "SESSION_SECRET": session_secret,
         })
-        write_profile(ROOT / "database" / ".env.practice-access", {
-            "ADMINISTRACION": ADMIN_EMAIL,
-            "SEGURIDAD": SECURITY_EMAIL,
-            "ALUMNO": FIRST_STUDENT,
-            "CLAVE": login,
-        })
+        account_profile = ROOT / "database" / ".env.practice-access"
+        if not account_profile.exists():
+            write_profile(account_profile, {
+                "ADMINISTRACION": ADMIN_EMAIL,
+                "SEGURIDAD": SECURITY_EMAIL,
+                "ALUMNO": FIRST_STUDENT,
+                "CLAVE": login,
+            })
     print(json.dumps(totals))
 
 

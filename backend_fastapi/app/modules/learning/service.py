@@ -155,7 +155,7 @@ async def forecast(
         "fuente": "modelo_real" if predictions else "alternativa",
         "mensaje": "Ocupación estimada e intervalos en hora de Lima"
         if predictions
-        else "Modelo real no disponible para esta consulta. Se muestran frecuencias o disponibilidad.",
+        else "Modelo operativo sin habilitar. Se muestra el historial o la disponibilidad según la franja.",
         "turnos": result,
     }
 
@@ -424,10 +424,10 @@ async def demo_prediction(db: AsyncSession, module: Module) -> dict[str, Any]:
         .limit(1)
     )
     if version is None:
-        raise AppError("Entrena primero una versión para el entorno de práctica", 409)
+        raise AppError("Entrena primero una versión para la evaluación del modelo", 409)
     estimator = await model_artifact(db, version)
     if estimator is None:
-        raise AppError("La versión de práctica requiere un nuevo entrenamiento", 409)
+        raise AppError("La versión de evaluación requiere un nuevo entrenamiento", 409)
     size = {"demanda": 84, "anomalias": 60, "inasistencia": 56}[module]
     examples = demo_samples(module)[-size:]
     features: list[Features] = [row.features for row in examples]

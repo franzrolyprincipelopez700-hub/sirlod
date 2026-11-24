@@ -11,7 +11,6 @@ import {
 
 type Item = Record<string, unknown>;
 interface Overview {
-  entorno?: "institucional" | "practica";
   totalUsuarios: number;
   totalTrabajadores: number;
   totalLosas: number;
@@ -108,7 +107,6 @@ export default function AdminInicio() {
     <Link className="mt-3 inline-flex text-sm font-semibold underline" to="/dashboard/inicio" reloadDocument>Volver a consultar</Link>
   </section>;
   const {
-    entorno,
     totalUsuarios     = 0,
     totalTrabajadores = 0,
     totalLosas        = 0,
@@ -170,7 +168,7 @@ export default function AdminInicio() {
             Panel de control
           </h1>
           <p className="text-sm mt-1" style={{ color: "var(--text-secondary)" }}>
-            {entorno === "practica" ? "Entorno de práctica" : entorno === "institucional" ? "Entorno institucional" : "SIRLOD · UNHEVAL"}
+            SIRLOD · UNHEVAL
           </p>
         </div>
         {pendientes > 0 && (

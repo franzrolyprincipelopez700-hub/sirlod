@@ -96,19 +96,6 @@
   box-shadow: 0 1px 5px #1429451b;
 }
 
-.ml-source {
-  display: flex;
-  gap: .58rem;
-  align-items: center;
-  color: #40596d;
-  font-size: .81rem;
-}
-
-.ml-source svg {
-  color: var(--ml-accent);
-  flex-shrink: 0;
-}
-
 .ml-stat {
   position: relative;
   overflow: hidden;

@@ -17,7 +17,6 @@ import { campusDate } from "../ia/shared";
 interface ReportState {
   existe: boolean;
   solicitudes?: number;
-  practica?: boolean;
   id_reporte?: number;
   nombre_archivo?: string;
   tamanio?: number;
@@ -310,7 +309,7 @@ export default function ReportsPage() {
               <h2 id="pdf-preview-title" className="font-bold text-slate-800">{periodLabel}</h2>
               {hasReport ? (
                 <span className="rounded-md bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800">
-                  {report.practica ? "Reporte de práctica" : "PDF guardado"}
+                  PDF guardado
                 </span>
               ) : null}
             </div>

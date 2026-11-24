@@ -215,8 +215,7 @@ export default function AnomalyWorkspace() {
   const data = useLoaderData<typeof loader>();
   const filters = data.ok ? data.query : {};
   const offset = Number(filters.offset ?? 0);
-  return <Workspace module="anomalias" view={data.ok ? data.view : undefined}
-    source={data.ok ? data.dashboard?.origen : undefined}>
+  return <Workspace module="anomalias" view={data.ok ? data.view : undefined}>
     {!data.ok ? <WorkspaceError message={data.error} /> : <>
       {data.view === "practica" ? data.practice
         ? <AnomalyPractice key={data.practice.version} data={data.practice} />
@@ -231,7 +230,7 @@ export default function AnomalyWorkspace() {
               {result.mensaje ?? `${result.alertas} alertas nuevas de ${result.muestras} periodos por cuenta.`}
             </p>} /> : <p className="text-sm text-slate-600">
               El análisis automático requiere un modelo operativo activo.
-              <Link className="ml-1 font-semibold underline" to="?vista=practica">Explorar la evaluación del modelo</Link>.
+              <Link className="ml-1 font-semibold underline" to="?vista=evaluacion">Explorar la evaluación del modelo</Link>.
             </p>}
           <details open={Boolean(filters.asistencia || filters.alerta) || undefined} className="space-y-2">
             <summary className="cursor-pointer font-medium">Registrar incidente con evidencia</summary>

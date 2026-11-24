@@ -3,7 +3,7 @@ import { api } from "~/services/api.server";
 import { requireRole } from "~/services/auth.server";
 import { Button, Input, Select } from "~/shared/components/ui";
 import { dayLabel, Empty, integer, Panel, Ring, total } from "./charts";
-import { activateVersion, failure, loadWorkspace, reply, validMutation } from "./learning.server";
+import { activateVersion, failure, loadWorkspace, reply, validMutation, workspaceView } from "./learning.server";
 import { AttendancePractice, Tag } from "./practice";
 import { card, label, localDate, Operation, percent, Reason } from "./shared";
 import type { AttendanceSlot, DashboardSummary, Risk } from "./types";
@@ -29,7 +29,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const admin = new URL(request.url).pathname.startsWith("/dashboard/");
   await requireRole(request, "trabajador", admin ? "Administrador" : "Seguridad");
   validMutation(request);
-  if (admin && new URL(request.url).searchParams.get("vista") === "practica") {
+  if (admin && workspaceView(new URL(request.url).searchParams) === "practica") {
     throw new Response("Las decisiones operativas requieren la vista Operación", { status: 400 });
   }
   const form = await request.formData();
@@ -91,7 +91,7 @@ export default function Attendance() {
   const data = useLoaderData<typeof loader>();
   if (!data.ok) return <WorkspaceError message={data.error} />;
   const workspace = data.workspace;
-  if (workspace) return <Workspace module="inasistencia" view={workspace.view} source={workspace.dashboard?.origen}>
+  if (workspace) return <Workspace module="inasistencia" view={workspace.view}>
     {workspace.view === "practica" ? workspace.practice
       ? <AttendancePractice key={workspace.practice.version} data={workspace.practice} />
       : <WorkspaceError message={workspace.practiceError ?? "La evaluación no está disponible."} /> : <>
@@ -137,7 +137,7 @@ function AttendanceRecords({ data, riskAvailable = false }: {
             </ul>
           </div>} /> : <p className="text-sm text-slate-600">
             La predicción por reserva requiere un modelo operativo activo.
-            <Link className="ml-1 font-semibold underline" to="?vista=practica">Explorar predicciones evaluadas</Link>
+            <Link className="ml-1 font-semibold underline" to="?vista=evaluacion">Explorar predicciones evaluadas</Link>
           </p>}
       </section>}
       <div>
